@@ -35,6 +35,7 @@ export const DIRECTORIES = {
 
 export interface AgentAdapter {
   id: "claude" | "opencode" | "codex";
+  displayName: string;
   agentDir: string;
   commandsSubdir: string;
   skillsSubdir: string;
@@ -43,6 +44,10 @@ export interface AgentAdapter {
   fileExtension: string;
   companionInstructionsFile: "CLAUDE.md" | "AGENTS.md";
   supportsAllowedTools: boolean;
+  /** Short path label shown in the interactive picker, e.g. ".claude/commands/". */
+  pickerHint: string;
+  /** Post-install hint, e.g. "If Claude Code is already running, restart it…". */
+  restartHint: string;
   userCommandsPath(): string;
   userSkillsPath(): string;
 }
@@ -53,6 +58,7 @@ export const AGENT_ADAPTERS: Record<
 > = {
   claude: {
     id: "claude",
+    displayName: "Claude Code",
     agentDir: ".claude",
     commandsSubdir: "commands",
     skillsSubdir: "skills",
@@ -60,11 +66,15 @@ export const AGENT_ADAPTERS: Record<
     fileExtension: ".md",
     companionInstructionsFile: "CLAUDE.md",
     supportsAllowedTools: true,
+    pickerHint: ".claude/commands/",
+    restartHint:
+      "If Claude Code is already running, restart it to pick up the new commands.",
     userCommandsPath: () => path.join(os.homedir(), ".claude", "commands"),
     userSkillsPath: () => path.join(os.homedir(), ".claude", "skills"),
   },
   opencode: {
     id: "opencode",
+    displayName: "OpenCode",
     agentDir: ".opencode",
     commandsSubdir: "commands",
     skillsSubdir: "skills",
@@ -72,6 +82,9 @@ export const AGENT_ADAPTERS: Record<
     fileExtension: ".md",
     companionInstructionsFile: "AGENTS.md",
     supportsAllowedTools: false,
+    pickerHint: ".opencode/commands/",
+    restartHint:
+      "If OpenCode is already running, restart it to pick up the new commands.",
     userCommandsPath: () =>
       path.join(os.homedir(), ".config", "opencode", "commands"),
     userSkillsPath: () =>
@@ -79,6 +92,7 @@ export const AGENT_ADAPTERS: Record<
   },
   codex: {
     id: "codex",
+    displayName: "Codex",
     agentDir: ".codex",
     commandsSubdir: "skills",
     skillsSubdir: "skills",
@@ -87,6 +101,9 @@ export const AGENT_ADAPTERS: Record<
     fileExtension: ".md",
     companionInstructionsFile: "AGENTS.md",
     supportsAllowedTools: false,
+    pickerHint: ".codex/skills/",
+    restartHint:
+      "If Codex is already running, restart it to pick up the new skills.",
     userCommandsPath: () => path.join(os.homedir(), ".codex", "skills"),
     userSkillsPath: () => path.join(os.homedir(), ".codex", "skills"),
   },
@@ -179,11 +196,14 @@ export const FLAG_OPTIONS = [
   },
 ] as const;
 
-function resolveAdapter(agent: Agent): AgentAdapter {
-  if (agent === AGENTS.BOTH) {
-    return AGENT_ADAPTERS.opencode;
+export function resolveAdapter(agent: Agent): AgentAdapter {
+  const adapter = AGENT_ADAPTERS[agent as keyof typeof AGENT_ADAPTERS];
+  if (!adapter) {
+    throw new Error(
+      `No adapter for agent "${agent}". Callers targeting "both" must fan out per agent first.`,
+    );
   }
-  return AGENT_ADAPTERS[agent as keyof typeof AGENT_ADAPTERS];
+  return adapter;
 }
 
 /**
@@ -214,10 +234,12 @@ export function injectNameIntoFrontmatter(
   if (!fmMatch) {
     return `---\nname: ${skillName}\n---\n\n${content}`;
   }
-  if (/^name:/m.test(fmMatch[1])) {
-    return content.replace(/^name:.*$/m, `name: ${skillName}`);
-  }
-  return content.replace(/^---\n/, `---\nname: ${skillName}\n`);
+  const original = fmMatch[0];
+  const body = fmMatch[1];
+  const updatedBody = /^name:/m.test(body)
+    ? body.replace(/^name:.*$/m, `name: ${skillName}`)
+    : `name: ${skillName}\n${body}`;
+  return `---\n${updatedBody}\n---${content.slice(original.length)}`;
 }
 
 async function writeCommandFile(

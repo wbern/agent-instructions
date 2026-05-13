@@ -145,12 +145,7 @@ This injects the content only into `commit.md` and `ask.md`.
 
 ### File Priority
 
-The generator checks the agent-native file first:
-
-- **OpenCode** (`--agent=opencode`): `AGENTS.md` first, then `CLAUDE.md`
-- **Claude Code** (`--agent=claude`): `CLAUDE.md` first, then `AGENTS.md`
-
-Only the first file found is used.
+The generator checks `CLAUDE.md` first, then `AGENTS.md`. Only the first file found is used.
 
 ## Which Command Should I Use?
 

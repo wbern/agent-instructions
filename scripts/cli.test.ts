@@ -49,85 +49,46 @@ vi.mock("@clack/prompts", () => ({
   outro: vi.fn(),
 }));
 
-vi.mock("./cli-generator.js", () => ({
-  generateToDirectory: vi
-    .fn()
-    .mockResolvedValue({ success: true, filesGenerated: 5 }),
-  generateSkillsToDirectory: vi
-    .fn()
-    .mockResolvedValue({ success: true, skillsGenerated: 1 }),
-  checkForConflicts: vi.fn().mockResolvedValue([]),
-  checkExistingFiles: vi.fn().mockResolvedValue([]),
-  DIRECTORIES: {
-    CLAUDE: ".claude",
-    OPENCODE: ".opencode",
-    CODEX: ".codex",
-    COMMANDS: "commands",
-    SKILLS: "skills",
-  },
-  AGENTS: {
-    CLAUDE: "claude",
-    OPENCODE: "opencode",
-    CODEX: "codex",
-    BOTH: "both",
-  },
-  getSkillsPath: vi.fn().mockReturnValue("/mock/path/.opencode/skills"),
-  getCommandsGroupedByCategory: vi.fn().mockResolvedValue({
-    "TDD Cycle": [
-      { value: "red.md", label: "red.md", hint: "Red phase" },
-      { value: "green.md", label: "green.md", hint: "Green phase" },
-    ],
-    Workflow: [
-      { value: "commit.md", label: "commit.md", hint: "Create commit" },
-    ],
-  }),
-  getRequestedToolsOptions: vi.fn().mockResolvedValue([
-    { value: "Bash(git diff:*)", label: "git diff" },
-    { value: "Bash(git status:*)", label: "git status" },
-  ]),
-  FLAG_OPTIONS: [
-    {
-      value: "beads",
-      label: "Beads MCP",
-      hint: "Local issue tracking",
-      category: "Feature Flags",
-    },
-    {
-      value: "no-plan-files",
-      label: "No Plan Files",
-      hint: "Forbid Claude Code's internal plan.md",
-      category: "Feature Flags",
-    },
-    {
-      value: "gh-cli",
-      label: "GitHub CLI",
-      hint: "Use gh CLI instead of GitHub MCP",
-      category: "Feature Flags",
-    },
-    {
-      value: "gh-mcp",
-      label: "GitHub MCP",
-      hint: "Use GitHub MCP only (no CLI fallback)",
-      category: "Feature Flags",
-    },
-  ],
-  SCOPES: {
-    PROJECT: "project",
-    USER: "user",
-  },
-  getScopeOptions: vi.fn().mockReturnValue([
-    {
-      value: "project",
-      label: "Project/Repository",
-      hint: "/mock/path/.opencode/commands",
-    },
-    {
-      value: "user",
-      label: "User (Global)",
-      hint: "/home/user/.config/opencode/commands",
-    },
-  ]),
-}));
+vi.mock("./cli-generator.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./cli-generator.js")>();
+  return {
+    ...actual,
+    generateToDirectory: vi
+      .fn()
+      .mockResolvedValue({ success: true, filesGenerated: 5 }),
+    generateSkillsToDirectory: vi
+      .fn()
+      .mockResolvedValue({ success: true, skillsGenerated: 1 }),
+    checkForConflicts: vi.fn().mockResolvedValue([]),
+    checkExistingFiles: vi.fn().mockResolvedValue([]),
+    getSkillsPath: vi.fn().mockReturnValue("/mock/path/.opencode/skills"),
+    getCommandsGroupedByCategory: vi.fn().mockResolvedValue({
+      "TDD Cycle": [
+        { value: "red.md", label: "red.md", hint: "Red phase" },
+        { value: "green.md", label: "green.md", hint: "Green phase" },
+      ],
+      Workflow: [
+        { value: "commit.md", label: "commit.md", hint: "Create commit" },
+      ],
+    }),
+    getRequestedToolsOptions: vi.fn().mockResolvedValue([
+      { value: "Bash(git diff:*)", label: "git diff" },
+      { value: "Bash(git status:*)", label: "git status" },
+    ]),
+    getScopeOptions: vi.fn().mockReturnValue([
+      {
+        value: "project",
+        label: "Project/Repository",
+        hint: "/mock/path/.opencode/commands",
+      },
+      {
+        value: "user",
+        label: "User (Global)",
+        hint: "/home/user/.config/opencode/commands",
+      },
+    ]),
+  };
+});
 
 vi.mock("./tty.js", () => ({
   isInteractiveTTY: vi.fn().mockReturnValue(true),
@@ -1309,7 +1270,9 @@ NEW LAST`;
       ],
     });
 
-    vi.mocked(select).mockResolvedValueOnce("project");
+    vi.mocked(select)
+      .mockResolvedValueOnce("opencode") // agent
+      .mockResolvedValueOnce("project"); // scope
     vi.mocked(text).mockResolvedValueOnce("");
     vi.mocked(groupMultiselect)
       .mockResolvedValueOnce([]) // flags
@@ -1369,7 +1332,9 @@ NEW LAST`;
       ],
     });
 
-    vi.mocked(select).mockResolvedValueOnce("project");
+    vi.mocked(select)
+      .mockResolvedValueOnce("opencode") // agent
+      .mockResolvedValueOnce("project"); // scope
     vi.mocked(text).mockResolvedValueOnce("");
     vi.mocked(groupMultiselect)
       .mockResolvedValueOnce([]) // flags
@@ -1409,7 +1374,9 @@ NEW LAST`;
     // Mock that no commands exist in the target directory
     vi.mocked(checkExistingFiles).mockResolvedValueOnce([]);
 
-    vi.mocked(select).mockResolvedValueOnce("project");
+    vi.mocked(select)
+      .mockResolvedValueOnce("opencode") // agent
+      .mockResolvedValueOnce("project"); // scope
     vi.mocked(text).mockResolvedValueOnce("");
     vi.mocked(groupMultiselect).mockResolvedValueOnce([]); // flags
 
@@ -2221,7 +2188,9 @@ describe("flags selection (dynamic generation)", () => {
     const { main } = await import("./cli.js");
 
     // Set up the full interactive flow manually
-    vi.mocked(select).mockResolvedValueOnce("project"); // scope
+    vi.mocked(select)
+      .mockResolvedValueOnce("opencode") // agent
+      .mockResolvedValueOnce("project"); // scope
     vi.mocked(text).mockResolvedValueOnce(""); // prefix
     vi.mocked(groupMultiselect)
       .mockResolvedValueOnce(["gh-cli", "gh-mcp"]) // First flags attempt: both selected (invalid)

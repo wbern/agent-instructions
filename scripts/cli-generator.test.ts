@@ -32,7 +32,6 @@ vi.mock("markdownlint", () => ({
 }));
 
 import {
-  AGENT_ADAPTERS,
   AGENTS,
   checkForConflicts,
   generateToDirectory,
@@ -1630,10 +1629,10 @@ describe("getSkillsPath", () => {
     expect(result).toContain("skills");
   });
 
-  it("should fall back to opencode adapter when agent is 'both'", () => {
-    const result = getSkillsPath(SCOPES.PROJECT, AGENTS.BOTH);
-    expect(result).toContain(".opencode");
-    expect(result).toContain("skills");
+  it("should throw when agent is 'both' (caller must fan out)", () => {
+    expect(() => getSkillsPath(SCOPES.PROJECT, AGENTS.BOTH)).toThrow(
+      /must fan out/,
+    );
   });
 });
 
@@ -1699,48 +1698,20 @@ describe("injectNameIntoFrontmatter", () => {
     const result = injectNameIntoFrontmatter(input, "foo");
     expect(result).toBe("---\nname: foo\ndescription: x\n---\n# Body");
   });
-});
 
-describe("AGENT_ADAPTERS registry", () => {
-  it("should expose a claude adapter", () => {
-    const claude = AGENT_ADAPTERS.claude;
-    expect(claude.id).toBe("claude");
-    expect(claude.agentDir).toBe(".claude");
-    expect(claude.commandsSubdir).toBe("commands");
-    expect(claude.layoutMode).toBe("flat");
-    expect(claude.fileExtension).toBe(".md");
-    expect(claude.companionInstructionsFile).toBe("CLAUDE.md");
-    expect(claude.supportsAllowedTools).toBe(true);
+  it("should not touch name-like lines in the body", () => {
+    const input =
+      "---\ndescription: x\n---\n\nExample:\nname: should-not-change";
+    const result = injectNameIntoFrontmatter(input, "real");
+    expect(result).toBe(
+      "---\nname: real\ndescription: x\n---\n\nExample:\nname: should-not-change",
+    );
   });
 
-  it("should expose an opencode adapter", () => {
-    const opencode = AGENT_ADAPTERS.opencode;
-    expect(opencode.id).toBe("opencode");
-    expect(opencode.agentDir).toBe(".opencode");
-    expect(opencode.commandsSubdir).toBe("commands");
-    expect(opencode.layoutMode).toBe("flat");
-    expect(opencode.fileExtension).toBe(".md");
-    expect(opencode.companionInstructionsFile).toBe("AGENTS.md");
-    expect(opencode.supportsAllowedTools).toBe(false);
-  });
-
-  it("should expose a codex adapter with directory layout", () => {
-    const codex = AGENT_ADAPTERS.codex;
-    expect(codex.id).toBe("codex");
-    expect(codex.agentDir).toBe(".codex");
-    expect(codex.commandsSubdir).toBe("skills");
-    expect(codex.layoutMode).toBe("directory");
-    expect(codex.entryFile).toBe("SKILL.md");
-    expect(codex.fileExtension).toBe(".md");
-    expect(codex.companionInstructionsFile).toBe("AGENTS.md");
-    expect(codex.supportsAllowedTools).toBe(false);
-  });
-
-  it("should resolve user-level paths for each adapter", () => {
-    expect(AGENT_ADAPTERS.claude.userCommandsPath()).toContain(".claude");
-    expect(AGENT_ADAPTERS.opencode.userCommandsPath()).toContain("opencode");
-    expect(AGENT_ADAPTERS.codex.userCommandsPath()).toContain(".codex");
-    expect(AGENT_ADAPTERS.codex.userCommandsPath()).toContain("skills");
+  it("should replace only the frontmatter name when body has name-like lines", () => {
+    const input = "---\nname: old\n---\n\nname: not-this-one";
+    const result = injectNameIntoFrontmatter(input, "new");
+    expect(result).toBe("---\nname: new\n---\n\nname: not-this-one");
   });
 });
 

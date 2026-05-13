@@ -1,4 +1,3 @@
-import os from "node:os";
 import path from "node:path";
 import {
   confirm,
@@ -21,7 +20,6 @@ import {
   AGENTS,
   type Agent,
   checkExistingFiles,
-  DIRECTORIES,
   type ExistingFile,
   FLAG_OPTIONS,
   generateSkillsToDirectory,
@@ -30,6 +28,7 @@ import {
   getRequestedToolsOptions,
   getScopeOptions,
   getSkillsPath,
+  resolveAdapter,
   SCOPES,
   type Scope,
 } from "./cli-generator.js";
@@ -57,21 +56,10 @@ function isCustomPath(scope: string | symbol | undefined): boolean {
   );
 }
 
-function getAgentDir(agent: Agent): string {
-  if (agent === AGENTS.CLAUDE) return DIRECTORIES.CLAUDE;
-  if (agent === AGENTS.CODEX) return DIRECTORIES.CODEX;
-  return DIRECTORIES.OPENCODE;
-}
-
-function getAgentCommandsSubdir(agent: Agent): string {
-  // Codex uses a single "skills" directory for both commands and skills.
-  return agent === AGENTS.CODEX ? DIRECTORIES.SKILLS : DIRECTORIES.COMMANDS;
-}
-
 function getAgentOutputPath(scope: string, agent: Agent): string | undefined {
-  return isCustomPath(scope)
-    ? path.join(scope, getAgentDir(agent), getAgentCommandsSubdir(agent))
-    : undefined;
+  if (!isCustomPath(scope)) return undefined;
+  const adapter = resolveAdapter(agent);
+  return path.join(scope, adapter.agentDir, adapter.commandsSubdir);
 }
 
 function agentTargets(agent: Agent): Agent[] {
@@ -344,24 +332,20 @@ export async function main(args?: CliArgs): Promise<void> {
     }
 
     // Interactive mode: agent target first, then scope, then flags
+    const singleAgentOptions = (
+      [AGENTS.CLAUDE, AGENTS.OPENCODE, AGENTS.CODEX] as const
+    ).map((id) => {
+      const adapter = resolveAdapter(id);
+      return {
+        value: id,
+        label: adapter.displayName,
+        hint: adapter.pickerHint,
+      };
+    });
     const agentChoice = await select({
       message: "Select target agent",
       options: [
-        {
-          value: AGENTS.CLAUDE,
-          label: "Claude Code",
-          hint: ".claude/commands/",
-        },
-        {
-          value: AGENTS.OPENCODE,
-          label: "OpenCode",
-          hint: ".opencode/commands/",
-        },
-        {
-          value: AGENTS.CODEX,
-          label: "Codex",
-          hint: ".codex/skills/",
-        },
+        ...singleAgentOptions,
         { value: AGENTS.BOTH, label: "Both", hint: ".claude/ and .opencode/" },
       ],
     });
@@ -490,12 +474,11 @@ export async function main(args?: CliArgs): Promise<void> {
     }
 
     // Skills selection - allow users to generate selected commands as skills
-    const skillsHint =
-      selectedAgent === AGENTS.CLAUDE
-        ? "Generate as skill in .claude/skills/"
-        : selectedAgent === AGENTS.CODEX
-          ? "Generate as skill in .codex/skills/"
-          : "Generate as skill in .opencode/skills/";
+    const skillsAdapter =
+      selectedAgent === AGENTS.BOTH
+        ? resolveAdapter(AGENTS.OPENCODE)
+        : resolveAdapter(selectedAgent);
+    const skillsHint = `Generate as skill in ${skillsAdapter.agentDir}/${skillsAdapter.skillsSubdir}/`;
     const commandsForSkills = (selectedCommands as string[]).map((cmd) => ({
       value: cmd,
       label: cmd.replace(/\.md$/, ""),
@@ -616,11 +599,12 @@ export async function main(args?: CliArgs): Promise<void> {
 
   let totalFilesGenerated = 0;
   for (const agentTarget of agentsToGenerate) {
+    const targetAdapter = resolveAdapter(agentTarget);
     const outputPath = isCustomPath(scope as string)
       ? path.join(
           scope as string,
-          getAgentDir(agentTarget),
-          getAgentCommandsSubdir(agentTarget),
+          targetAdapter.agentDir,
+          targetAdapter.commandsSubdir,
         )
       : undefined;
     const agentResult = await generateToDirectory(outputPath, scope as Scope, {
@@ -642,9 +626,13 @@ export async function main(args?: CliArgs): Promise<void> {
   const skillsToGenerate = selectedSkills ?? args?.skills;
   if (skillsToGenerate && skillsToGenerate.length > 0) {
     for (const agentTarget of agentsToGenerate) {
-      const agentDir = getAgentDir(agentTarget);
+      const targetAdapter = resolveAdapter(agentTarget);
       const skillsPath = isCustomPath(scope as string)
-        ? path.join(scope as string, agentDir, "skills")
+        ? path.join(
+            scope as string,
+            targetAdapter.agentDir,
+            targetAdapter.skillsSubdir,
+          )
         : getSkillsPath(scope as string, agentTarget);
       const skillsResult = await generateSkillsToDirectory(
         skillsPath,
@@ -657,17 +645,16 @@ export async function main(args?: CliArgs): Promise<void> {
 
   // Primary path for display message (first agent target)
   const primaryAgent = agentsToGenerate[0];
-  const primaryAgentDir = getAgentDir(primaryAgent);
-  const primaryCommandsSubdir = getAgentCommandsSubdir(primaryAgent);
+  const primaryAdapter = resolveAdapter(primaryAgent);
   const fullPath = isCustomPath(scope as string)
-    ? path.join(scope as string, primaryAgentDir, primaryCommandsSubdir)
+    ? path.join(
+        scope as string,
+        primaryAdapter.agentDir,
+        primaryAdapter.commandsSubdir,
+      )
     : scope === "project"
-      ? `${process.cwd()}/${primaryAgentDir}/${primaryCommandsSubdir}`
-      : primaryAgent === AGENTS.CLAUDE
-        ? `${os.homedir()}/.claude/commands`
-        : primaryAgent === AGENTS.CODEX
-          ? `${os.homedir()}/.codex/skills`
-          : `${os.homedir()}/.config/opencode/commands`;
+      ? `${process.cwd()}/${primaryAdapter.agentDir}/${primaryAdapter.commandsSubdir}`
+      : primaryAdapter.userCommandsPath();
 
   // Build automation command for interactive mode
   const isInteractiveMode = !args?.scope;
@@ -700,19 +687,24 @@ To automate this setup:
   ${parts.join(" ")}`;
   }
 
+  const primarySkillsPath = isCustomPath(scope as string)
+    ? path.join(
+        scope as string,
+        primaryAdapter.agentDir,
+        primaryAdapter.skillsSubdir,
+      )
+    : scope === "project"
+      ? `${process.cwd()}/${primaryAdapter.agentDir}/${primaryAdapter.skillsSubdir}`
+      : primaryAdapter.userSkillsPath();
   const skillsMessage =
     skillsGenerated > 0
-      ? `\nInstalled ${skillsGenerated} skills to ${fullPath.replace("/commands", "/skills")}`
+      ? `\nInstalled ${skillsGenerated} skills to ${primarySkillsPath}`
       : "";
 
   const agentRestartNote =
-    selectedAgent === AGENTS.CLAUDE
-      ? "If Claude Code is already running, restart it to pick up the new commands."
-      : selectedAgent === AGENTS.CODEX
-        ? "If Codex is already running, restart it to pick up the new skills."
-        : selectedAgent === AGENTS.BOTH
-          ? "Restart your agent (OpenCode or Claude Code) to pick up the new commands."
-          : "If OpenCode is already running, restart it to pick up the new commands.";
+    selectedAgent === AGENTS.BOTH
+      ? "Restart your agent (OpenCode or Claude Code) to pick up the new commands."
+      : resolveAdapter(selectedAgent).restartHint;
 
   outro(
     `Installed ${result.filesGenerated} commands to ${fullPath}${skillsMessage}

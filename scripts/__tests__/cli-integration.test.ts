@@ -243,19 +243,25 @@ describe("CLI Integration", () => {
 
     await main({
       scope: customBase,
-      commands: ["commit.md"],
+      commands: ["commit.md", "red.md"],
       overwrite: true,
       agent: "codex",
     });
 
-    const skillFile = path.join(skillsDir, "commit", "SKILL.md");
-    expect(fs.existsSync(skillFile)).toBe(true);
+    // Neither skill should land at the flat .md path used by Claude/OpenCode.
+    expect(fs.existsSync(path.join(skillsDir, "commit.md"))).toBe(false);
+    expect(fs.existsSync(path.join(skillsDir, "red.md"))).toBe(false);
 
-    const content = fs.readFileSync(skillFile, "utf-8");
-    expect(content).toMatch(/^---\n/);
-    expect(content).toMatch(/\nname: commit\n/);
-    expect(content).toMatch(/\ndescription: /);
-    expect(content).not.toContain("allowed-tools:");
+    for (const name of ["commit", "red"]) {
+      const skillFile = path.join(skillsDir, name, "SKILL.md");
+      expect(fs.existsSync(skillFile)).toBe(true);
+
+      const content = fs.readFileSync(skillFile, "utf-8");
+      expect(content).toMatch(/^---\n/);
+      expect(content).toMatch(new RegExp(`\\nname: ${name}\\n`));
+      expect(content).toMatch(/\ndescription: /);
+      expect(content).not.toContain("allowed-tools:");
+    }
   });
 
   it("should generate skill to .claude/skills/{name}/SKILL.md with proper frontmatter", async () => {
