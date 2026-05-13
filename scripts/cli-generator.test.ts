@@ -40,6 +40,7 @@ import {
   getSkillsPath,
   injectNameIntoFrontmatter,
   SCOPES,
+  type SingleAgent,
   stripClaudeOnlyFrontmatter,
 } from "./cli-generator.js";
 
@@ -1630,9 +1631,11 @@ describe("getSkillsPath", () => {
   });
 
   it("should throw when agent is 'both' (caller must fan out)", () => {
-    expect(() => getSkillsPath(SCOPES.PROJECT, AGENTS.BOTH)).toThrow(
-      /must fan out/,
-    );
+    // Bypass the type-narrowed signature to verify the runtime guard still
+    // fires if a caller subverts the type system.
+    expect(() =>
+      getSkillsPath(SCOPES.PROJECT, AGENTS.BOTH as unknown as SingleAgent),
+    ).toThrow(/must fan out/);
   });
 });
 

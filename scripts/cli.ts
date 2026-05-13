@@ -17,6 +17,7 @@ import * as v from "valibot";
 const pc = process.env.FORCE_COLOR ? picocolors.createColors(true) : picocolors;
 
 import {
+  AGENT_ADAPTERS,
   AGENTS,
   type Agent,
   checkExistingFiles,
@@ -31,6 +32,7 @@ import {
   resolveAdapter,
   SCOPES,
   type Scope,
+  type SingleAgent,
 } from "./cli-generator.js";
 import { CLI_OPTIONS } from "./cli-options.js";
 import { isInteractiveTTY } from "./tty.js";
@@ -56,13 +58,16 @@ function isCustomPath(scope: string | symbol | undefined): boolean {
   );
 }
 
-function getAgentOutputPath(scope: string, agent: Agent): string | undefined {
+function getAgentOutputPath(
+  scope: string,
+  agent: SingleAgent,
+): string | undefined {
   if (!isCustomPath(scope)) return undefined;
   const adapter = resolveAdapter(agent);
   return path.join(scope, adapter.agentDir, adapter.commandsSubdir);
 }
 
-function agentTargets(agent: Agent): Agent[] {
+function agentTargets(agent: Agent): SingleAgent[] {
   return agent === AGENTS.BOTH ? [AGENTS.OPENCODE, AGENTS.CLAUDE] : [agent];
 }
 
@@ -333,9 +338,9 @@ export async function main(args?: CliArgs): Promise<void> {
 
     // Interactive mode: agent target first, then scope, then flags
     const singleAgentOptions = (
-      [AGENTS.CLAUDE, AGENTS.OPENCODE, AGENTS.CODEX] as const
+      Object.keys(AGENT_ADAPTERS) as SingleAgent[]
     ).map((id) => {
-      const adapter = resolveAdapter(id);
+      const adapter = AGENT_ADAPTERS[id];
       return {
         value: id,
         label: adapter.displayName,
@@ -473,7 +478,9 @@ export async function main(args?: CliArgs): Promise<void> {
       }
     }
 
-    // Skills selection - allow users to generate selected commands as skills
+    // Skills selection - allow users to generate selected commands as skills.
+    // BOTH expands to claude+opencode (see agentTargets), which share the flat
+    // skills layout, so showing the opencode hint is accurate for either.
     const skillsAdapter =
       selectedAgent === AGENTS.BOTH
         ? resolveAdapter(AGENTS.OPENCODE)
@@ -592,10 +599,7 @@ export async function main(args?: CliArgs): Promise<void> {
   }
 
   // For "both" agent, generate to OpenCode first then Claude
-  const agentsToGenerate: Agent[] =
-    selectedAgent === AGENTS.BOTH
-      ? [AGENTS.OPENCODE, AGENTS.CLAUDE]
-      : [selectedAgent];
+  const agentsToGenerate: SingleAgent[] = agentTargets(selectedAgent);
 
   let totalFilesGenerated = 0;
   for (const agentTarget of agentsToGenerate) {

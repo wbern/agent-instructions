@@ -24,6 +24,9 @@ export const AGENTS = {
 
 export type Agent = (typeof AGENTS)[keyof typeof AGENTS];
 
+/** A single agent target — excludes the "both" fan-out sentinel. */
+export type SingleAgent = Exclude<Agent, typeof AGENTS.BOTH>;
+
 export const DIRECTORIES = {
   CLAUDE: ".claude",
   OPENCODE: ".opencode",
@@ -196,8 +199,8 @@ export const FLAG_OPTIONS = [
   },
 ] as const;
 
-export function resolveAdapter(agent: Agent): AgentAdapter {
-  const adapter = AGENT_ADAPTERS[agent as keyof typeof AGENT_ADAPTERS];
+export function resolveAdapter(agent: SingleAgent): AgentAdapter {
+  const adapter = AGENT_ADAPTERS[agent];
   if (!adapter) {
     throw new Error(
       `No adapter for agent "${agent}". Callers targeting "both" must fan out per agent first.`,
@@ -261,7 +264,7 @@ async function writeCommandFile(
 
 export function getScopeOptions(
   terminalWidth: number = 80,
-  agent: Agent = AGENTS.OPENCODE,
+  agent: SingleAgent = AGENTS.OPENCODE,
 ) {
   const adapter = resolveAdapter(agent);
   const projectPath = path.join(
@@ -293,7 +296,7 @@ export interface GenerateOptions {
   allowedTools?: string[];
   flags?: string[];
   includeContribCommands?: boolean;
-  agent?: Agent;
+  agent?: SingleAgent;
 }
 
 export interface FileConflict {
@@ -540,7 +543,7 @@ export async function getRequestedToolsOptions(): Promise<
 function getDestinationPath(
   outputPath: string | undefined,
   scope: string | undefined,
-  agent: Agent = AGENTS.OPENCODE,
+  agent: SingleAgent = AGENTS.OPENCODE,
 ): string {
   if (outputPath) {
     return outputPath;
@@ -563,7 +566,7 @@ function getDestinationPath(
  */
 export function getSkillsPath(
   scope: string,
-  agent: Agent = AGENTS.OPENCODE,
+  agent: SingleAgent = AGENTS.OPENCODE,
 ): string {
   const adapter = resolveAdapter(agent);
   if (scope === SCOPES.PROJECT) {
