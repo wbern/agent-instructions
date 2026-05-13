@@ -58,7 +58,6 @@ describe("CLI Integration", () => {
     const pkgJson = fs.readJsonSync(path.join(PROJECT_ROOT, "package.json"));
     expect(pkgJson.bin).toEqual({
       "agent-instructions": "./bin/cli.js",
-      "claude-instructions": "./bin/cli.js",
     });
   });
 

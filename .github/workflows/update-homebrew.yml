@@ -1,0 +1,109 @@
+name: Update Homebrew Formula
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  # Manual trigger: regenerate the formula against the current latest release
+  # without cutting a new version. Useful for testing formula changes.
+  workflow_dispatch:
+
+jobs:
+  update-formula:
+    # On workflow_run, only after success. workflow_dispatch always runs.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get latest release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(gh api repos/${{ github.repository }}/releases/latest --jq '.tag_name')
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch npm tarball and compute sha256
+        id: checksums
+        run: |
+          VERSION="${{ steps.release.outputs.version }}"
+          TARBALL_URL="https://registry.npmjs.org/@wbern/agent-instructions/-/agent-instructions-${VERSION}.tgz"
+
+          # semantic-release publishes to npm before creating the GitHub release,
+          # but the registry can take a few seconds to propagate. Retry on 404.
+          for attempt in 1 2 3 4 5; do
+            if curl -fsSL -o "agent-instructions-${VERSION}.tgz" "$TARBALL_URL"; then
+              break
+            fi
+            echo "Attempt $attempt failed, waiting before retry..."
+            sleep 10
+          done
+          test -s "agent-instructions-${VERSION}.tgz" || {
+            echo "Failed to download tarball from $TARBALL_URL" >&2
+            exit 1
+          }
+
+          SHA=$(sha256sum "agent-instructions-${VERSION}.tgz" | cut -d ' ' -f 1)
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "tarball_url=$TARBALL_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: wbern/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update formula
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          TARBALL_URL: ${{ steps.checksums.outputs.tarball_url }}
+          SHA256: ${{ steps.checksums.outputs.sha256 }}
+        run: |
+          mkdir -p homebrew-tap/Formula
+          cat > homebrew-tap/Formula/agent-instructions.rb << 'RUBY'
+          class AgentInstructions < Formula
+            desc "TDD workflow commands for AI coding agents (Claude Code, OpenCode, Codex)"
+            homepage "https://github.com/wbern/agent-instructions"
+            url "@@TARBALL_URL@@"
+            sha256 "@@SHA256@@"
+            license "MIT"
+            version "@@VERSION@@"
+
+            livecheck do
+              url "https://github.com/wbern/agent-instructions/releases/latest"
+              regex(/v(\d+(?:\.\d+)+)/i)
+            end
+
+            depends_on "node"
+
+            def install
+              system "npm", "install", *std_npm_args
+              bin.install_symlink Dir["#{libexec}/bin/*"]
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/agent-instructions --version")
+            end
+          end
+          RUBY
+
+          sed -i \
+            -e "s|@@VERSION@@|${VERSION}|g" \
+            -e "s|@@TARBALL_URL@@|${TARBALL_URL}|g" \
+            -e "s|@@SHA256@@|${SHA256}|g" \
+            homebrew-tap/Formula/agent-instructions.rb
+
+          echo "--- Generated formula ---"
+          cat homebrew-tap/Formula/agent-instructions.rb
+
+      - name: Commit and push
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/agent-instructions.rb
+          git diff --cached --quiet && exit 0
+          git commit -m "agent-instructions ${{ steps.release.outputs.version }}"
+          git push

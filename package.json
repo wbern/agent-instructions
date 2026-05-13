@@ -7,8 +7,7 @@
   },
   "type": "module",
   "bin": {
-    "agent-instructions": "./bin/cli.js",
-    "claude-instructions": "./bin/cli.js"
+    "agent-instructions": "./bin/cli.js"
   },
   "files": [
     "bin",

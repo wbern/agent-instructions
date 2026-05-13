@@ -43,12 +43,18 @@ Also included are commands for commits, PRs, code reviews, and other tasks that 
 
 ## Installation
 
-```bash
-npx @wbern/agent-instructions    # npm
-```
+**One-off run (no install):**
 
 ```bash
-pnpm dlx @wbern/agent-instructions   # pnpm
+npx @wbern/agent-instructions       # npm
+pnpm dlx @wbern/agent-instructions  # pnpm
+```
+
+**Install globally:**
+
+```bash
+brew install wbern/tap/agent-instructions    # Homebrew
+npm install -g @wbern/agent-instructions     # npm
 ```
 
 The interactive installer lets you choose:
