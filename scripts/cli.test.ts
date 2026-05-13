@@ -6,6 +6,7 @@ const mockCancel = Symbol("cancel");
 // Flow configuration as data - change this array when the interactive flow changes
 type MockFn = "select" | "text" | "groupMultiselect";
 type StepKey =
+  | "agent"
   | "scope"
   | "prefix"
   | "flags"
@@ -21,6 +22,7 @@ interface FlowStep {
 }
 
 const INTERACTIVE_FLOW: FlowStep[] = [
+  { key: "agent", mock: "select", default: "opencode" },
   { key: "scope", mock: "select", default: "project" },
   { key: "prefix", mock: "text", default: "" },
   { key: "flags", mock: "groupMultiselect", default: [] },
@@ -47,72 +49,46 @@ vi.mock("@clack/prompts", () => ({
   outro: vi.fn(),
 }));
 
-vi.mock("./cli-generator.js", () => ({
-  generateToDirectory: vi
-    .fn()
-    .mockResolvedValue({ success: true, filesGenerated: 5 }),
-  generateSkillsToDirectory: vi
-    .fn()
-    .mockResolvedValue({ success: true, skillsGenerated: 1 }),
-  checkForConflicts: vi.fn().mockResolvedValue([]),
-  checkExistingFiles: vi.fn().mockResolvedValue([]),
-  DIRECTORIES: { CLAUDE: ".claude" },
-  getCommandsGroupedByCategory: vi.fn().mockResolvedValue({
-    "TDD Cycle": [
-      { value: "red.md", label: "red.md", hint: "Red phase" },
-      { value: "green.md", label: "green.md", hint: "Green phase" },
-    ],
-    Workflow: [
-      { value: "commit.md", label: "commit.md", hint: "Create commit" },
-    ],
-  }),
-  getRequestedToolsOptions: vi.fn().mockResolvedValue([
-    { value: "Bash(git diff:*)", label: "git diff" },
-    { value: "Bash(git status:*)", label: "git status" },
-  ]),
-  FLAG_OPTIONS: [
-    {
-      value: "beads",
-      label: "Beads MCP",
-      hint: "Local issue tracking",
-      category: "Feature Flags",
-    },
-    {
-      value: "no-plan-files",
-      label: "No Plan Files",
-      hint: "Forbid Claude Code's internal plan.md",
-      category: "Feature Flags",
-    },
-    {
-      value: "gh-cli",
-      label: "GitHub CLI",
-      hint: "Use gh CLI instead of GitHub MCP",
-      category: "Feature Flags",
-    },
-    {
-      value: "gh-mcp",
-      label: "GitHub MCP",
-      hint: "Use GitHub MCP only (no CLI fallback)",
-      category: "Feature Flags",
-    },
-  ],
-  SCOPES: {
-    PROJECT: "project",
-    USER: "user",
-  },
-  getScopeOptions: vi.fn().mockReturnValue([
-    {
-      value: "project",
-      label: "Project/Repository",
-      hint: "/mock/path/.claude/commands",
-    },
-    {
-      value: "user",
-      label: "User (Global)",
-      hint: "/home/user/.claude/commands",
-    },
-  ]),
-}));
+vi.mock("./cli-generator.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./cli-generator.js")>();
+  return {
+    ...actual,
+    generateToDirectory: vi
+      .fn()
+      .mockResolvedValue({ success: true, filesGenerated: 5 }),
+    generateSkillsToDirectory: vi
+      .fn()
+      .mockResolvedValue({ success: true, skillsGenerated: 1 }),
+    checkForConflicts: vi.fn().mockResolvedValue([]),
+    checkExistingFiles: vi.fn().mockResolvedValue([]),
+    getSkillsPath: vi.fn().mockReturnValue("/mock/path/.opencode/skills"),
+    getCommandsGroupedByCategory: vi.fn().mockResolvedValue({
+      "TDD Cycle": [
+        { value: "red.md", label: "red.md", hint: "Red phase" },
+        { value: "green.md", label: "green.md", hint: "Green phase" },
+      ],
+      Workflow: [
+        { value: "commit.md", label: "commit.md", hint: "Create commit" },
+      ],
+    }),
+    getRequestedToolsOptions: vi.fn().mockResolvedValue([
+      { value: "Bash(git diff:*)", label: "git diff" },
+      { value: "Bash(git status:*)", label: "git status" },
+    ]),
+    getScopeOptions: vi.fn().mockReturnValue([
+      {
+        value: "project",
+        label: "Project/Repository",
+        hint: "/mock/path/.opencode/commands",
+      },
+      {
+        value: "user",
+        label: "User (Global)",
+        hint: "/home/user/.config/opencode/commands",
+      },
+    ]),
+  };
+});
 
 vi.mock("./tty.js", () => ({
   isInteractiveTTY: vi.fn().mockReturnValue(true),
@@ -120,6 +96,7 @@ vi.mock("./tty.js", () => ({
 
 // Generic helper to setup interactive flow mocks
 interface InteractiveFlowOptions {
+  agent?: string;
   scope?: string;
   prefix?: string;
   flags?: string[];
@@ -177,7 +154,8 @@ describe("CLI", () => {
 
     await main();
 
-    expect(select).toHaveBeenCalledTimes(1);
+    // Now select is called twice: once for agent, once for scope
+    expect(select).toHaveBeenCalledTimes(2);
     expect(generateToDirectory).toHaveBeenCalledWith(
       undefined,
       "project",
@@ -186,6 +164,123 @@ describe("CLI", () => {
         flags: ["beads"],
       }),
     );
+  });
+
+  it("should pass OPENCODE to getScopeOptions when agent is BOTH", async () => {
+    const { generateToDirectory, getScopeOptions } = await import(
+      "./cli-generator.js"
+    );
+    const { main } = await import("./cli.js");
+
+    await setupInteractiveMocks({ agent: "both" });
+
+    await main();
+
+    // getScopeOptions should receive "opencode" when agent is "both" (not "both" itself)
+    expect(getScopeOptions).toHaveBeenCalledWith(
+      expect.any(Number),
+      "opencode",
+    );
+    // generateToDirectory should be called twice (once per agent)
+    expect(generateToDirectory).toHaveBeenCalledTimes(2);
+  });
+
+  it("should sum file counts from both agents when agent is both", async () => {
+    const { outro } = await import("@clack/prompts");
+    const { generateToDirectory } = await import("./cli-generator.js");
+    const { main } = await import("./cli.js");
+
+    vi.mocked(generateToDirectory).mockResolvedValue({
+      success: true,
+      filesGenerated: 7,
+    } as never);
+
+    await main({ scope: "project", agent: "both" });
+
+    // Should report 14 (7 per agent x 2 agents), not 7
+    expect(outro).toHaveBeenCalledWith(expect.stringContaining("14"));
+  });
+
+  it("should show .claude/skills/ hint in skills prompt when agent is claude", async () => {
+    const { groupMultiselect } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await setupInteractiveMocks({ agent: "claude", allowedTools: [] });
+
+    await main();
+
+    // Find the skills prompt call (it includes "skills" in the message)
+    const skillsCall = vi
+      .mocked(groupMultiselect)
+      .mock.calls.find((call) =>
+        (call[0] as { message: string }).message?.includes("skills"),
+      );
+    expect(skillsCall).toBeDefined();
+    const opts = (skillsCall![0] as { options: Record<string, unknown[]> })
+      .options;
+    const availableCommands = opts["Available commands"] as Array<{
+      hint: string;
+    }>;
+    expect(availableCommands[0].hint).toBe(
+      "Generate as skill in .claude/skills/",
+    );
+  });
+
+  it("should show .codex/skills/ hint in skills prompt when agent is codex", async () => {
+    const { groupMultiselect } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await setupInteractiveMocks({ agent: "codex", allowedTools: [] });
+
+    await main();
+
+    const skillsCall = vi
+      .mocked(groupMultiselect)
+      .mock.calls.find((call) =>
+        (call[0] as { message: string }).message?.includes("skills"),
+      );
+    expect(skillsCall).toBeDefined();
+    const opts = (skillsCall![0] as { options: Record<string, unknown[]> })
+      .options;
+    const availableCommands = opts["Available commands"] as Array<{
+      hint: string;
+    }>;
+    expect(availableCommands[0].hint).toBe(
+      "Generate as skill in .codex/skills/",
+    );
+  });
+
+  it("should exit gracefully when user cancels on agent selection", async () => {
+    const { generateToDirectory } = await import("./cli-generator.js");
+    const { main } = await import("./cli.js");
+
+    await setupInteractiveMocks({ cancelAt: "agent" });
+
+    await main();
+
+    expect(generateToDirectory).not.toHaveBeenCalled();
+  });
+
+  it("should list agents alphabetically with no pre-selection bias", async () => {
+    const { select } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await setupInteractiveMocks();
+
+    await main();
+
+    // First select call is agent selection
+    const agentCall = vi.mocked(select).mock.calls[0];
+    const agentOpts = agentCall[0] as {
+      initialValue?: string;
+      options: Array<{ value: string; label: string }>;
+    };
+    // No pre-selected default
+    expect(agentOpts.initialValue).toBeUndefined();
+    // Claude Code listed before OpenCode (alphabetical — no bias toward either)
+    const labels = agentOpts.options.map((o) => o.label);
+    expect(labels[0]).toBe("Claude Code");
+    expect(labels[1]).toBe("OpenCode");
   });
 
   it("should exit gracefully when user cancels with Ctrl+C on scope", async () => {
@@ -239,7 +334,7 @@ describe("CLI", () => {
 
     expect(outro).toHaveBeenCalledWith(expect.stringContaining("17"));
     expect(outro).toHaveBeenCalledWith(
-      expect.stringContaining(".claude/commands"),
+      expect.stringContaining(".opencode/commands"),
     );
   });
 
@@ -254,6 +349,61 @@ describe("CLI", () => {
     expect(outro).toHaveBeenCalledWith(expect.stringContaining("Happy"));
     expect(outro).toHaveBeenCalledWith(expect.stringContaining(process.cwd()));
     expect(outro).toHaveBeenCalledWith(expect.stringContaining("restart"));
+  });
+
+  it("should show Claude Code restart hint when agent is claude", async () => {
+    const { outro } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await main({ scope: "project", agent: "claude" });
+
+    expect(outro).toHaveBeenCalledWith(
+      expect.stringContaining("Claude Code is already running"),
+    );
+  });
+
+  it("should show both-agent restart hint when agent is both", async () => {
+    const { outro } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await main({ scope: "project", agent: "both" });
+
+    expect(outro).toHaveBeenCalledWith(
+      expect.stringContaining("OpenCode or Claude Code"),
+    );
+  });
+
+  it("should show Codex restart hint when agent is codex", async () => {
+    const { outro } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await main({ scope: "project", agent: "codex" });
+
+    expect(outro).toHaveBeenCalledWith(
+      expect.stringContaining("Codex is already running"),
+    );
+  });
+
+  it("should use .claude path for user-level claude agent", async () => {
+    const { outro } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await main({ scope: "user", agent: "claude" });
+
+    expect(outro).toHaveBeenCalledWith(
+      expect.stringContaining(".claude/commands"),
+    );
+  });
+
+  it("should use .codex/skills path for user-level codex agent", async () => {
+    const { outro } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await main({ scope: "user", agent: "codex" });
+
+    expect(outro).toHaveBeenCalledWith(
+      expect.stringContaining(".codex/skills"),
+    );
   });
 
   it("should show kata workflow example in success message", async () => {
@@ -292,7 +442,7 @@ describe("CLI", () => {
     await main();
 
     expect(outro).toHaveBeenCalledWith(
-      expect.stringContaining("claude-instructions --scope=project"),
+      expect.stringContaining("agent-instructions --scope=project"),
     );
     expect(outro).toHaveBeenCalledWith(expect.stringContaining("--prefix=my-"));
     expect(outro).toHaveBeenCalledWith(
@@ -322,7 +472,7 @@ describe("CLI", () => {
 
     // Should generate skills for selected commands
     expect(generateSkillsToDirectory).toHaveBeenCalledWith(
-      expect.stringContaining(".claude/skills"),
+      expect.stringContaining(".opencode/skills"),
       ["tdd.md"],
       expect.any(Object),
     );
@@ -418,11 +568,31 @@ describe("CLI", () => {
       skills: ["tdd.md"],
     });
 
-    // Should call with user home directory path
+    // Should call with user opencode directory path (default agent is opencode)
     expect(generateSkillsToDirectory).toHaveBeenCalledWith(
-      expect.stringContaining(".claude/skills"),
+      expect.stringContaining(".opencode/skills"),
       ["tdd.md"],
       expect.any(Object),
+    );
+  });
+
+  it("should warn when --agent is omitted in non-interactive mode", async () => {
+    const { log } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await main({ scope: "project" });
+
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("--agent"));
+  });
+
+  it("should NOT warn when --agent is explicitly provided in non-interactive mode", async () => {
+    const { log } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await main({ scope: "project", agent: "opencode" });
+
+    expect(log.warn).not.toHaveBeenCalledWith(
+      expect.stringContaining("--agent"),
     );
   });
 
@@ -1100,7 +1270,9 @@ NEW LAST`;
       ],
     });
 
-    vi.mocked(select).mockResolvedValueOnce("project");
+    vi.mocked(select)
+      .mockResolvedValueOnce("opencode") // agent
+      .mockResolvedValueOnce("project"); // scope
     vi.mocked(text).mockResolvedValueOnce("");
     vi.mocked(groupMultiselect)
       .mockResolvedValueOnce([]) // flags
@@ -1160,7 +1332,9 @@ NEW LAST`;
       ],
     });
 
-    vi.mocked(select).mockResolvedValueOnce("project");
+    vi.mocked(select)
+      .mockResolvedValueOnce("opencode") // agent
+      .mockResolvedValueOnce("project"); // scope
     vi.mocked(text).mockResolvedValueOnce("");
     vi.mocked(groupMultiselect)
       .mockResolvedValueOnce([]) // flags
@@ -1200,7 +1374,9 @@ NEW LAST`;
     // Mock that no commands exist in the target directory
     vi.mocked(checkExistingFiles).mockResolvedValueOnce([]);
 
-    vi.mocked(select).mockResolvedValueOnce("project");
+    vi.mocked(select)
+      .mockResolvedValueOnce("opencode") // agent
+      .mockResolvedValueOnce("project"); // scope
     vi.mocked(text).mockResolvedValueOnce("");
     vi.mocked(groupMultiselect).mockResolvedValueOnce([]); // flags
 
@@ -1270,6 +1446,161 @@ NEW LAST`;
     );
     // Should NOT generate any files
     expect(generateToDirectory).not.toHaveBeenCalled();
+  });
+
+  it("should check both agent dirs when updateExisting with agent=both in non-interactive mode", async () => {
+    const { checkExistingFiles, generateToDirectory } = await import(
+      "./cli-generator.js"
+    );
+    const { main } = await import("./cli.js");
+
+    // First call returns opencode files, second returns claude files
+    vi.mocked(checkExistingFiles)
+      .mockResolvedValueOnce([
+        {
+          filename: "red.md",
+          existingContent: "# Red",
+          newContent: "# Red v2",
+          isIdentical: false,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          filename: "commit.md",
+          existingContent: "# Commit",
+          newContent: "# Commit v2",
+          isIdentical: false,
+        },
+      ]);
+
+    await main({
+      scope: "/tmp/custom-path",
+      prefix: "",
+      agent: "both",
+      updateExisting: true,
+      overwrite: true,
+    });
+
+    // checkExistingFiles should be called twice (once per agent) with custom paths
+    expect(checkExistingFiles).toHaveBeenCalledTimes(2);
+    expect(checkExistingFiles).toHaveBeenCalledWith(
+      expect.stringContaining(".opencode/commands"),
+      "/tmp/custom-path",
+      expect.objectContaining({ agent: "opencode" }),
+    );
+    expect(checkExistingFiles).toHaveBeenCalledWith(
+      expect.stringContaining(".claude/commands"),
+      "/tmp/custom-path",
+      expect.objectContaining({ agent: "claude" }),
+    );
+    // generateToDirectory receives merged commands from both agent dirs
+    expect(generateToDirectory).toHaveBeenCalledWith(
+      expect.stringContaining(".opencode/commands"),
+      "/tmp/custom-path",
+      expect.objectContaining({
+        commands: expect.arrayContaining(["red.md", "commit.md"]),
+      }),
+    );
+  });
+
+  it("should check both agent dirs when updateExisting with agent=both in interactive mode", async () => {
+    const { checkExistingFiles, getCommandsGroupedByCategory } = await import(
+      "./cli-generator.js"
+    );
+    const { select, text, groupMultiselect } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    // First call returns opencode files, second returns claude files
+    vi.mocked(checkExistingFiles)
+      .mockResolvedValueOnce([
+        {
+          filename: "red.md",
+          existingContent: "# Red",
+          newContent: "# Red v2",
+          isIdentical: false,
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          filename: "commit.md",
+          existingContent: "# Commit",
+          newContent: "# Commit v2",
+          isIdentical: false,
+        },
+      ]);
+
+    vi.mocked(getCommandsGroupedByCategory).mockResolvedValueOnce({
+      "TDD Cycle": [
+        { value: "red.md", label: "red.md", selectedByDefault: true },
+      ],
+      Workflow: [
+        { value: "commit.md", label: "commit.md", selectedByDefault: true },
+      ],
+    });
+
+    vi.mocked(select)
+      .mockResolvedValueOnce("both") // agent
+      .mockResolvedValueOnce("project"); // scope
+    vi.mocked(text).mockResolvedValueOnce(""); // prefix
+    vi.mocked(groupMultiselect)
+      .mockResolvedValueOnce([]) // flags
+      .mockResolvedValueOnce(["red.md", "commit.md"]) // commands
+      .mockResolvedValueOnce([]); // skills
+
+    await main({ updateExisting: true, overwrite: true });
+
+    // checkExistingFiles should be called twice (once per agent)
+    expect(checkExistingFiles).toHaveBeenCalledTimes(2);
+    expect(checkExistingFiles).toHaveBeenCalledWith(
+      undefined,
+      "project",
+      expect.objectContaining({ agent: "opencode" }),
+    );
+    expect(checkExistingFiles).toHaveBeenCalledWith(
+      undefined,
+      "project",
+      expect.objectContaining({ agent: "claude" }),
+    );
+  });
+
+  it("should check both agent dirs for conflict detection when agent=both with custom path", async () => {
+    const { checkExistingFiles, generateToDirectory } = await import(
+      "./cli-generator.js"
+    );
+    const { main } = await import("./cli.js");
+
+    // Mock checkExistingFiles for each agent call during conflict detection
+    vi.mocked(checkExistingFiles)
+      .mockResolvedValueOnce([
+        {
+          filename: "red.md",
+          existingContent: "# Red old",
+          newContent: "# Red new",
+          isIdentical: false,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+
+    await main({
+      scope: "/tmp/custom-output",
+      agent: "both",
+      overwrite: true,
+    });
+
+    // checkExistingFiles called for each agent with custom paths
+    expect(checkExistingFiles).toHaveBeenCalledTimes(2);
+    expect(checkExistingFiles).toHaveBeenCalledWith(
+      expect.stringContaining(".opencode/commands"),
+      "/tmp/custom-output",
+      expect.objectContaining({ agent: "opencode" }),
+    );
+    expect(checkExistingFiles).toHaveBeenCalledWith(
+      expect.stringContaining(".claude/commands"),
+      "/tmp/custom-output",
+      expect.objectContaining({ agent: "claude" }),
+    );
+    // generateToDirectory called for each agent
+    expect(generateToDirectory).toHaveBeenCalledTimes(2);
   });
 
   it("should skip conflict prompts and overwrite when overwrite is true", async () => {
@@ -1857,7 +2188,9 @@ describe("flags selection (dynamic generation)", () => {
     const { main } = await import("./cli.js");
 
     // Set up the full interactive flow manually
-    vi.mocked(select).mockResolvedValueOnce("project"); // scope
+    vi.mocked(select)
+      .mockResolvedValueOnce("opencode") // agent
+      .mockResolvedValueOnce("project"); // scope
     vi.mocked(text).mockResolvedValueOnce(""); // prefix
     vi.mocked(groupMultiselect)
       .mockResolvedValueOnce(["gh-cli", "gh-mcp"]) // First flags attempt: both selected (invalid)
@@ -1900,7 +2233,8 @@ describe("flags selection (dynamic generation)", () => {
 
     await main();
 
-    expect(select).toHaveBeenCalledTimes(1);
+    // select is called twice: once for agent, once for scope
+    expect(select).toHaveBeenCalledTimes(2);
 
     expect(groupMultiselect).toHaveBeenNthCalledWith(
       1,

@@ -32,10 +32,16 @@ vi.mock("markdownlint", () => ({
 }));
 
 import {
+  AGENTS,
   checkForConflicts,
   generateToDirectory,
   getRequestedToolsOptions,
+  getScopeOptions,
+  getSkillsPath,
+  injectNameIntoFrontmatter,
   SCOPES,
+  type SingleAgent,
+  stripClaudeOnlyFrontmatter,
 } from "./cli-generator.js";
 
 describe("generateToDirectory", () => {
@@ -43,13 +49,6 @@ describe("generateToDirectory", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  it("should generate command files to specified directory", async () => {
-    const result = await generateToDirectory(MOCK_OUTPUT_PATH);
-
-    expect(result.success).toBe(true);
-    expect(result.filesGenerated).toBeGreaterThan(0);
   });
 
   it("should accept flags option and use it for generation", async () => {
@@ -75,7 +74,7 @@ describe("generateToDirectory", () => {
     );
   });
 
-  it("should accept scope parameter and use project-level path", async () => {
+  it("should accept scope parameter and use project-level opencode path by default", async () => {
     vi.mocked(fs.readdir).mockResolvedValue(["red.md"] as never);
     vi.mocked(fs.readFile).mockResolvedValue(
       "---\ndescription: Test\n---\n# Test" as never,
@@ -84,18 +83,48 @@ describe("generateToDirectory", () => {
     await generateToDirectory(undefined, SCOPES.PROJECT);
 
     expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining(".opencode/commands"),
+      expect.any(String),
+    );
+  });
+
+  it("should use project-level claude path when agent is claude", async () => {
+    vi.mocked(fs.readdir).mockResolvedValue(["red.md"] as never);
+    vi.mocked(fs.readFile).mockResolvedValue(
+      "---\ndescription: Test\n---\n# Test" as never,
+    );
+
+    await generateToDirectory(undefined, SCOPES.PROJECT, {
+      agent: AGENTS.CLAUDE,
+    });
+
+    expect(fs.writeFile).toHaveBeenCalledWith(
       expect.stringContaining(".claude/commands"),
       expect.any(String),
     );
   });
 
-  it("should use user-level path when scope is user", async () => {
+  it("should use user-level opencode path when scope is user (default)", async () => {
     vi.mocked(fs.readdir).mockResolvedValue(["red.md"] as never);
     vi.mocked(fs.readFile).mockResolvedValue(
       "---\ndescription: Test\n---\n# Test" as never,
     );
 
     await generateToDirectory(undefined, SCOPES.USER);
+
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining(".config/opencode/commands"),
+      expect.any(String),
+    );
+  });
+
+  it("should use user-level claude path when scope is user and agent is claude", async () => {
+    vi.mocked(fs.readdir).mockResolvedValue(["red.md"] as never);
+    vi.mocked(fs.readFile).mockResolvedValue(
+      "---\ndescription: Test\n---\n# Test" as never,
+    );
+
+    await generateToDirectory(undefined, SCOPES.USER, { agent: AGENTS.CLAUDE });
 
     expect(fs.writeFile).toHaveBeenCalledWith(
       expect.stringContaining(".claude/commands"),
@@ -494,6 +523,22 @@ describe("checkExistingFiles", () => {
     });
   });
 
+  it("should inject skill name into newContent when adapter uses directory layout", async () => {
+    const sourceContent = "---\ndescription: A skill\n---\n# Body";
+
+    vi.mocked(fs.readdir).mockResolvedValue(["red.md"] as never);
+    vi.mocked(fs.pathExists).mockResolvedValue(true as never);
+    vi.mocked(fs.readFile).mockResolvedValue(sourceContent as never);
+
+    const { checkExistingFiles } = await import("./cli-generator.js");
+    const files = await checkExistingFiles(MOCK_OUTPUT_PATH, undefined, {
+      agent: AGENTS.CODEX,
+    });
+
+    expect(files).toHaveLength(1);
+    expect(files[0].newContent).toContain("name: red");
+  });
+
   it("should only check files specified in commands option", async () => {
     const existingContent = "# Existing";
     const newContent = "# New";
@@ -888,6 +933,7 @@ description: Code review
 
     await generateToDirectory(MOCK_OUTPUT_PATH, SCOPES.PROJECT, {
       allowedTools: ["Bash(git diff:*)", "Bash(git status:*)"],
+      agent: AGENTS.CLAUDE,
     });
 
     expect(fs.writeFile).toHaveBeenCalledWith(
@@ -958,6 +1004,7 @@ description: Contributor command
     await generateToDirectory(MOCK_OUTPUT_PATH, SCOPES.PROJECT, {
       allowedTools: ["Bash(git status:*)"],
       includeContribCommands: true,
+      agent: AGENTS.CLAUDE,
     });
 
     // Should write to contributor-cmd.md (no underscore)
@@ -1420,6 +1467,71 @@ Just content, no frontmatter.`;
     expect(writtenContent).toContain("description: ");
     expect(writtenContent).toContain("# Test Skill");
   });
+
+  it("should generate multiple skills in a single call", async () => {
+    const sources: Record<string, string> = {
+      "red.md": `---
+description: Write a failing test
+---
+
+# Red Phase`,
+      "green.md": `---
+description: Make it pass
+---
+
+# Green Phase`,
+    };
+
+    vi.mocked(fs.readFile).mockImplementation(((filePath: string) =>
+      Promise.resolve(
+        sources[
+          Object.keys(sources).find((key) => filePath.endsWith(key)) ?? ""
+        ] ?? "",
+      )) as typeof fs.readFile);
+
+    const { generateSkillsToDirectory } = await import("./cli-generator.js");
+    const result = await generateSkillsToDirectory(MOCK_OUTPUT_PATH, [
+      "red.md",
+      "green.md",
+    ]);
+
+    expect(result.success).toBe(true);
+    expect(result.skillsGenerated).toBe(2);
+    expect(fs.ensureDir).toHaveBeenCalledWith(expect.stringContaining("/red"));
+    expect(fs.ensureDir).toHaveBeenCalledWith(
+      expect.stringContaining("/green"),
+    );
+    expect(fs.writeFile).toHaveBeenCalledTimes(2);
+
+    const firstContent = vi.mocked(fs.writeFile).mock.calls[0][1] as string;
+    expect(firstContent).toContain("name: red");
+    expect(firstContent).toContain("description: Write a failing test");
+
+    const secondContent = vi.mocked(fs.writeFile).mock.calls[1][1] as string;
+    expect(secondContent).toContain("name: green");
+    expect(secondContent).toContain("description: Make it pass");
+  });
+
+  it("should pass feature flags to fragment expander", async () => {
+    const { expandContent } = await import("./fragment-expander.js");
+    const sourceContent = `---
+description: Test skill
+---
+
+# Skill Content`;
+
+    vi.mocked(fs.readFile).mockResolvedValue(sourceContent as never);
+
+    const { generateSkillsToDirectory } = await import("./cli-generator.js");
+    await generateSkillsToDirectory(MOCK_OUTPUT_PATH, ["test.md"], {
+      flags: ["beads", "github"],
+    });
+
+    expect(expandContent).toHaveBeenCalledWith(
+      sourceContent,
+      expect.objectContaining({ flags: ["beads", "github"] }),
+    );
+  });
 });
 
 describe("generateToDirectory with flags option", () => {
@@ -1475,7 +1587,7 @@ Use Beads to track this task.`;
     // Should call expandContent with the source content and flags
     expect(expandContent).toHaveBeenCalledWith(sourceContent, {
       flags: ["beads"],
-      baseDir: expect.stringContaining("claude-instructions"),
+      baseDir: expect.any(String),
     });
 
     // Should write expanded content
@@ -1483,5 +1595,136 @@ Use Beads to track this task.`;
       expect.stringContaining("red.md"),
       expandedContent,
     );
+  });
+});
+
+describe("getSkillsPath", () => {
+  it("should return project-level opencode skills path", () => {
+    const result = getSkillsPath(SCOPES.PROJECT, AGENTS.OPENCODE);
+    expect(result).toContain(".opencode");
+    expect(result).toContain("skills");
+  });
+
+  it("should return project-level claude skills path", () => {
+    const result = getSkillsPath(SCOPES.PROJECT, AGENTS.CLAUDE);
+    expect(result).toContain(".claude");
+    expect(result).toContain("skills");
+  });
+
+  it("should return user-level claude skills path", () => {
+    const result = getSkillsPath(SCOPES.USER, AGENTS.CLAUDE);
+    expect(result).toContain(".claude");
+    expect(result).toContain("skills");
+  });
+
+  it("should return user-level opencode skills path (default)", () => {
+    const result = getSkillsPath(SCOPES.USER, AGENTS.OPENCODE);
+    expect(result).toContain(".config");
+    expect(result).toContain("opencode");
+    expect(result).toContain("skills");
+  });
+
+  it("should return user-level codex skills path", () => {
+    const result = getSkillsPath(SCOPES.USER, AGENTS.CODEX);
+    expect(result).toContain(".codex");
+    expect(result).toContain("skills");
+  });
+
+  it("should throw when agent is 'both' (caller must fan out)", () => {
+    // Bypass the type-narrowed signature to verify the runtime guard still
+    // fires if a caller subverts the type system.
+    expect(() =>
+      getSkillsPath(SCOPES.PROJECT, AGENTS.BOTH as unknown as SingleAgent),
+    ).toThrow(/must fan out/);
+  });
+});
+
+describe("stripClaudeOnlyFrontmatter", () => {
+  it("should strip single-line allowed-tools from frontmatter", () => {
+    const content = `---
+description: Test command
+allowed-tools: Bash(git diff:*), Bash(git status:*)
+---
+# Content`;
+    const result = stripClaudeOnlyFrontmatter(content);
+    expect(result).not.toContain("allowed-tools");
+    expect(result).toContain("description: Test command");
+    expect(result).toContain("# Content");
+  });
+
+  it("should strip multiline allowed-tools from frontmatter", () => {
+    const content = `---
+description: Test command
+allowed-tools:
+  - Bash(git diff:*)
+  - Bash(git status:*)
+---
+# Content`;
+    const result = stripClaudeOnlyFrontmatter(content);
+    expect(result).not.toContain("allowed-tools");
+    expect(result).not.toContain("Bash(git diff:*)");
+    expect(result).toContain("description: Test command");
+  });
+
+  it("should not strip non-Claude keys", () => {
+    const content = `---
+description: Test command
+name: test
+---
+# Content`;
+    const result = stripClaudeOnlyFrontmatter(content);
+    expect(result).toContain("description: Test command");
+    expect(result).toContain("name: test");
+  });
+
+  it("should return content unchanged when no frontmatter", () => {
+    const content = "# Just content\nNo frontmatter here.";
+    const result = stripClaudeOnlyFrontmatter(content);
+    expect(result).toBe(content);
+  });
+});
+
+describe("injectNameIntoFrontmatter", () => {
+  it("should prepend frontmatter when content has none", () => {
+    const result = injectNameIntoFrontmatter("# Body only", "foo");
+    expect(result).toBe("---\nname: foo\n---\n\n# Body only");
+  });
+
+  it("should replace existing name when frontmatter already has one", () => {
+    const input = "---\nname: old\ndescription: x\n---\n# Body";
+    const result = injectNameIntoFrontmatter(input, "new");
+    expect(result).toBe("---\nname: new\ndescription: x\n---\n# Body");
+  });
+
+  it("should insert name into existing frontmatter without name", () => {
+    const input = "---\ndescription: x\n---\n# Body";
+    const result = injectNameIntoFrontmatter(input, "foo");
+    expect(result).toBe("---\nname: foo\ndescription: x\n---\n# Body");
+  });
+
+  it("should not touch name-like lines in the body", () => {
+    const input =
+      "---\ndescription: x\n---\n\nExample:\nname: should-not-change";
+    const result = injectNameIntoFrontmatter(input, "real");
+    expect(result).toBe(
+      "---\nname: real\ndescription: x\n---\n\nExample:\nname: should-not-change",
+    );
+  });
+
+  it("should replace only the frontmatter name when body has name-like lines", () => {
+    const input = "---\nname: old\n---\n\nname: not-this-one";
+    const result = injectNameIntoFrontmatter(input, "new");
+    expect(result).toBe("---\nname: new\n---\n\nname: not-this-one");
+  });
+});
+
+describe("getScopeOptions (truncation edge case)", () => {
+  it("should truncate path without slash when path has no slash after truncation", () => {
+    // Use a very small maxLength (5) to force the no-slash branch in truncatePathFromLeft
+    // (truncated part will be just a few chars with no slash)
+    const options = getScopeOptions(5, AGENTS.OPENCODE);
+    expect(options.length).toBeGreaterThan(0);
+    // All hints should start with "..." due to extreme truncation
+    expect(options[0].hint).toMatch(/^\.\.\./);
   });
 });

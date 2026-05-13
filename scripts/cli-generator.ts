@@ -15,11 +15,102 @@ export const SCOPES = {
   USER: "user",
 } as const;
 
+export const AGENTS = {
+  CLAUDE: "claude",
+  OPENCODE: "opencode",
+  CODEX: "codex",
+  BOTH: "both",
+} as const;
+
+export type Agent = (typeof AGENTS)[keyof typeof AGENTS];
+
+/** A single agent target — excludes the "both" fan-out sentinel. */
+export type SingleAgent = Exclude<Agent, typeof AGENTS.BOTH>;
+
 export const DIRECTORIES = {
   CLAUDE: ".claude",
+  OPENCODE: ".opencode",
+  CODEX: ".codex",
   COMMANDS: "commands",
+  SKILLS: "skills",
   SOURCES: "src/sources",
 } as const;
+
+export interface AgentAdapter {
+  id: "claude" | "opencode" | "codex";
+  displayName: string;
+  agentDir: string;
+  commandsSubdir: string;
+  skillsSubdir: string;
+  layoutMode: "flat" | "directory";
+  entryFile?: string;
+  fileExtension: string;
+  companionInstructionsFile: "CLAUDE.md" | "AGENTS.md";
+  supportsAllowedTools: boolean;
+  /** Short path label shown in the interactive picker, e.g. ".claude/commands/". */
+  pickerHint: string;
+  /** Post-install hint, e.g. "If Claude Code is already running, restart it…". */
+  restartHint: string;
+  userCommandsPath(): string;
+  userSkillsPath(): string;
+}
+
+export const AGENT_ADAPTERS: Record<
+  "claude" | "opencode" | "codex",
+  AgentAdapter
+> = {
+  claude: {
+    id: "claude",
+    displayName: "Claude Code",
+    agentDir: ".claude",
+    commandsSubdir: "commands",
+    skillsSubdir: "skills",
+    layoutMode: "flat",
+    fileExtension: ".md",
+    companionInstructionsFile: "CLAUDE.md",
+    supportsAllowedTools: true,
+    pickerHint: ".claude/commands/",
+    restartHint:
+      "If Claude Code is already running, restart it to pick up the new commands.",
+    userCommandsPath: () => path.join(os.homedir(), ".claude", "commands"),
+    userSkillsPath: () => path.join(os.homedir(), ".claude", "skills"),
+  },
+  opencode: {
+    id: "opencode",
+    displayName: "OpenCode",
+    agentDir: ".opencode",
+    commandsSubdir: "commands",
+    skillsSubdir: "skills",
+    layoutMode: "flat",
+    fileExtension: ".md",
+    companionInstructionsFile: "AGENTS.md",
+    supportsAllowedTools: false,
+    pickerHint: ".opencode/commands/",
+    restartHint:
+      "If OpenCode is already running, restart it to pick up the new commands.",
+    userCommandsPath: () =>
+      path.join(os.homedir(), ".config", "opencode", "commands"),
+    userSkillsPath: () =>
+      path.join(os.homedir(), ".config", "opencode", "skills"),
+  },
+  codex: {
+    id: "codex",
+    displayName: "Codex",
+    agentDir: ".codex",
+    commandsSubdir: "skills",
+    skillsSubdir: "skills",
+    layoutMode: "directory",
+    entryFile: "SKILL.md",
+    fileExtension: ".md",
+    companionInstructionsFile: "AGENTS.md",
+    supportsAllowedTools: false,
+    pickerHint: ".codex/skills/",
+    restartHint:
+      "If Codex is already running, restart it to pick up the new skills.",
+    userCommandsPath: () => path.join(os.homedir(), ".codex", "skills"),
+    userSkillsPath: () => path.join(os.homedir(), ".codex", "skills"),
+  },
+};
 
 export const TEMPLATE_SOURCE_FILES = ["CLAUDE.md", "AGENTS.md"] as const;
 
@@ -108,17 +199,80 @@ export const FLAG_OPTIONS = [
   },
 ] as const;
 
-export function getScopeOptions(terminalWidth: number = 80) {
+export function resolveAdapter(agent: SingleAgent): AgentAdapter {
+  const adapter = AGENT_ADAPTERS[agent];
+  if (!adapter) {
+    throw new Error(
+      `No adapter for agent "${agent}". Callers targeting "both" must fan out per agent first.`,
+    );
+  }
+  return adapter;
+}
+
+/**
+ * Resolve the on-disk path for a command's entry file under a destination
+ * directory, honoring the adapter's layout mode (flat vs directory-per-command).
+ */
+function commandEntryPath(
+  adapter: AgentAdapter,
+  destinationPath: string,
+  baseFileName: string,
+): string {
+  if (adapter.layoutMode === "directory" && adapter.entryFile) {
+    const skillName = baseFileName.replace(/\.md$/, "");
+    return path.join(destinationPath, skillName, adapter.entryFile);
+  }
+  return path.join(destinationPath, baseFileName);
+}
+
+/**
+ * Inject `name: <skillName>` into existing YAML frontmatter, or prepend a fresh
+ * frontmatter block if none exists.
+ */
+export function injectNameIntoFrontmatter(
+  content: string,
+  skillName: string,
+): string {
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) {
+    return `---\nname: ${skillName}\n---\n\n${content}`;
+  }
+  const original = fmMatch[0];
+  const body = fmMatch[1];
+  const updatedBody = /^name:/m.test(body)
+    ? body.replace(/^name:.*$/m, `name: ${skillName}`)
+    : `name: ${skillName}\n${body}`;
+  return `---\n${updatedBody}\n---${content.slice(original.length)}`;
+}
+
+async function writeCommandFile(
+  adapter: AgentAdapter,
+  destinationPath: string,
+  baseFileName: string,
+  content: string,
+): Promise<void> {
+  const filePath = commandEntryPath(adapter, destinationPath, baseFileName);
+  if (adapter.layoutMode === "directory") {
+    await fs.ensureDir(path.dirname(filePath));
+    const skillName = baseFileName.replace(/\.md$/, "");
+    const withName = injectNameIntoFrontmatter(content, skillName);
+    await fs.writeFile(filePath, withName);
+    return;
+  }
+  await fs.writeFile(filePath, content);
+}
+
+export function getScopeOptions(
+  terminalWidth: number = 80,
+  agent: SingleAgent = AGENTS.OPENCODE,
+) {
+  const adapter = resolveAdapter(agent);
   const projectPath = path.join(
     process.cwd(),
-    DIRECTORIES.CLAUDE,
-    DIRECTORIES.COMMANDS,
+    adapter.agentDir,
+    adapter.commandsSubdir,
   );
-  const userPath = path.join(
-    os.homedir(),
-    DIRECTORIES.CLAUDE,
-    DIRECTORIES.COMMANDS,
-  );
+  const userPath = adapter.userCommandsPath();
 
   return [
     {
@@ -142,6 +296,7 @@ export interface GenerateOptions {
   allowedTools?: string[];
   flags?: string[];
   includeContribCommands?: boolean;
+  agent?: SingleAgent;
 }
 
 export interface FileConflict {
@@ -163,7 +318,7 @@ export async function checkExistingFiles(
   options?: GenerateOptions,
 ): Promise<ExistingFile[]> {
   const sourcePath = path.join(__dirname, "..", DIRECTORIES.SOURCES);
-  const destinationPath = getDestinationPath(outputPath, scope);
+  const destinationPath = getDestinationPath(outputPath, scope, options?.agent);
   const flags = options?.flags ?? [];
 
   const allFiles = await getSourceFiles(options?.includeContribCommands);
@@ -187,16 +342,20 @@ export async function checkExistingFiles(
   );
 
   const baseDir = path.join(__dirname, "..");
+  const adapter = resolveAdapter(options?.agent ?? AGENTS.OPENCODE);
 
   for (const file of files) {
     const outputFileName = stripContribPrefix(file);
     const destFileName = prefix + outputFileName;
-    const destFilePath = path.join(destinationPath, destFileName);
+    const destFilePath = commandEntryPath(
+      adapter,
+      destinationPath,
+      destFileName,
+    );
     const sourceFilePath = path.join(sourcePath, file);
 
     if (await fs.pathExists(destFilePath)) {
       const existingContent = await fs.readFile(destFilePath, "utf-8");
-      // Expand source content with flags, strip internal metadata, apply markdown fixes
       const sourceContent = await fs.readFile(sourceFilePath, "utf-8");
       let newContent = applyMarkdownFixes(
         stripInternalMetadata(
@@ -221,6 +380,11 @@ export async function checkExistingFiles(
             `---\n${allowedToolsYaml}\n`,
           );
         }
+      }
+
+      if (adapter.layoutMode === "directory") {
+        const skillName = destFileName.replace(/\.md$/, "");
+        newContent = injectNameIntoFrontmatter(newContent, skillName);
       }
 
       if (templates.length > 0) {
@@ -379,20 +543,99 @@ export async function getRequestedToolsOptions(): Promise<
 function getDestinationPath(
   outputPath: string | undefined,
   scope: string | undefined,
+  agent: SingleAgent = AGENTS.OPENCODE,
 ): string {
   if (outputPath) {
     return outputPath;
   }
 
+  const adapter = resolveAdapter(agent);
   if (scope === SCOPES.PROJECT) {
-    return path.join(process.cwd(), DIRECTORIES.CLAUDE, DIRECTORIES.COMMANDS);
+    return path.join(process.cwd(), adapter.agentDir, adapter.commandsSubdir);
   }
 
   if (scope === SCOPES.USER) {
-    return path.join(os.homedir(), DIRECTORIES.CLAUDE, DIRECTORIES.COMMANDS);
+    return adapter.userCommandsPath();
   }
 
   throw new Error("Either outputPath or scope must be provided");
+}
+
+/**
+ * Get the skills output path for the given scope and agent.
+ */
+export function getSkillsPath(
+  scope: string,
+  agent: SingleAgent = AGENTS.OPENCODE,
+): string {
+  const adapter = resolveAdapter(agent);
+  if (scope === SCOPES.PROJECT) {
+    return path.join(process.cwd(), adapter.agentDir, adapter.skillsSubdir);
+  }
+  return adapter.userSkillsPath();
+}
+
+/**
+ * Claude Code frontmatter keys not supported by OpenCode.
+ * These are stripped when generating for OpenCode targets.
+ */
+const CLAUDE_ONLY_FRONTMATTER_KEYS = ["allowed-tools"] as const;
+
+/**
+ * Parse and transform frontmatter lines, returning the modified content.
+ * Returns the original content unchanged if no frontmatter is present.
+ */
+function transformFrontmatter(
+  content: string,
+  transformLines: (lines: string[]) => string[],
+): string {
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!frontmatterMatch) {
+    return content;
+  }
+  const lines = frontmatterMatch[1].split("\n");
+  const newFrontmatter = transformLines(lines).join("\n");
+  return content.replace(/^---\n[\s\S]*?\n---/, `---\n${newFrontmatter}\n---`);
+}
+
+/**
+ * Strip frontmatter keys matching a predicate, including multiline values.
+ */
+function stripFrontmatterKeys(
+  content: string,
+  isTargetKey: (line: string) => boolean,
+): string {
+  return transformFrontmatter(content, (lines) => {
+    const filteredLines: string[] = [];
+    let skipMultiline = false;
+
+    for (const line of lines) {
+      if (isTargetKey(line)) {
+        skipMultiline = line.endsWith(":") || /:\s*$/.test(line);
+        continue;
+      }
+
+      if (skipMultiline && /^\s+/.test(line)) {
+        continue;
+      }
+
+      skipMultiline = false;
+      filteredLines.push(line);
+    }
+
+    return filteredLines;
+  });
+}
+
+/**
+ * Strip Claude Code-specific frontmatter keys for OpenCode compatibility.
+ * OpenCode supports: description, agent, model, subtask.
+ * Claude Code-only keys (e.g. allowed-tools) are removed.
+ */
+export function stripClaudeOnlyFrontmatter(content: string): string {
+  return stripFrontmatterKeys(content, (line) =>
+    CLAUDE_ONLY_FRONTMATTER_KEYS.some((key) => line.startsWith(`${key}:`)),
+  );
 }
 
 /**
@@ -401,35 +644,7 @@ function getDestinationPath(
  * that should not appear in generated output.
  */
 export function stripInternalMetadata(content: string): string {
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!frontmatterMatch) {
-    return content;
-  }
-
-  const frontmatter = frontmatterMatch[1];
-  const lines = frontmatter.split("\n");
-  const filteredLines: string[] = [];
-  let skipMultiline = false;
-
-  for (const line of lines) {
-    // Check if this is a top-level underscore property (includes hyphens like _requested-tools)
-    if (/^_[\w-]+:/.test(line)) {
-      // Check if it's a multiline value (ends with nothing after colon or has array indicator)
-      skipMultiline = line.endsWith(":") || /^_[\w-]+:\s*$/.test(line);
-      continue;
-    }
-
-    // Skip continuation lines of multiline values (indented lines)
-    if (skipMultiline && /^\s+/.test(line)) {
-      continue;
-    }
-
-    skipMultiline = false;
-    filteredLines.push(line);
-  }
-
-  const newFrontmatter = filteredLines.join("\n");
-  return content.replace(/^---\n[\s\S]*?\n---/, `---\n${newFrontmatter}\n---`);
+  return stripFrontmatterKeys(content, (line) => /^_[\w-]+:/.test(line));
 }
 
 /**
@@ -447,9 +662,13 @@ export function applyMarkdownFixes(content: string): string {
 export function extractTemplateBlocks(content: string): TemplateBlock[] {
   const blocks: TemplateBlock[] = [];
 
+  const tagPattern = "(?:claude|agent)-commands-template";
+
   // Match templates with commands attribute
-  const withCommandsRegex =
-    /<claude-commands-template\s+commands="([^"]+)">([\s\S]*?)<\/claude-commands-template>/g;
+  const withCommandsRegex = new RegExp(
+    `<${tagPattern}\\s+commands="([^"]+)">([\\s\\S]*?)<\\/${tagPattern}>`,
+    "g",
+  );
   for (const match of content.matchAll(withCommandsRegex)) {
     blocks.push({
       content: match[2].trim(),
@@ -458,8 +677,10 @@ export function extractTemplateBlocks(content: string): TemplateBlock[] {
   }
 
   // Match templates without commands attribute
-  const withoutCommandsRegex =
-    /<claude-commands-template>([\s\S]*?)<\/claude-commands-template>/g;
+  const withoutCommandsRegex = new RegExp(
+    `<${tagPattern}>([\\s\\S]*?)<\\/${tagPattern}>`,
+    "g",
+  );
   for (const match of content.matchAll(withoutCommandsRegex)) {
     blocks.push({
       content: match[1].trim(),
@@ -516,7 +737,7 @@ export async function generateToDirectory(
   scope?: Scope,
   options?: GenerateOptions,
 ): Promise<GenerateResult> {
-  const destinationPath = getDestinationPath(outputPath, scope);
+  const destinationPath = getDestinationPath(outputPath, scope, options?.agent);
   const sourcePath = path.join(__dirname, "..", DIRECTORIES.SOURCES);
   const flags = options?.flags ?? [];
 
@@ -535,6 +756,8 @@ export async function generateToDirectory(
   // Read source, expand with flags, strip internal metadata, fix lists, write to destination
   await fs.ensureDir(destinationPath);
   const baseDir = path.join(__dirname, "..");
+  const targetAgent = options?.agent ?? AGENTS.OPENCODE;
+  const adapter = resolveAdapter(targetAgent);
   for (const file of files) {
     const sourceFilePath = path.join(sourcePath, file);
     const sourceContent = await fs.readFile(sourceFilePath, "utf-8");
@@ -542,17 +765,25 @@ export async function generateToDirectory(
       flags,
       baseDir,
     });
-    const cleanedContent = applyMarkdownFixes(
-      stripInternalMetadata(expandedContent),
-    );
+    let processedContent = stripInternalMetadata(expandedContent);
+    if (!adapter.supportsAllowedTools) {
+      processedContent = stripClaudeOnlyFrontmatter(processedContent);
+    }
+    const cleanedContent = applyMarkdownFixes(processedContent);
     const outputFileName = stripContribPrefix(file);
-    await fs.writeFile(
-      path.join(destinationPath, prefix + outputFileName),
+    await writeCommandFile(
+      adapter,
+      destinationPath,
+      prefix + outputFileName,
       cleanedContent,
     );
   }
 
-  if (options?.allowedTools && options.allowedTools.length > 0) {
+  if (
+    options?.allowedTools &&
+    options.allowedTools.length > 0 &&
+    adapter.supportsAllowedTools
+  ) {
     const metadata = await loadCommandsMetadata();
     const allowedToolsSet = new Set(options.allowedTools);
 
@@ -592,7 +823,11 @@ export async function generateToDirectory(
       const actualFileName = options?.commandPrefix
         ? options.commandPrefix + outputFileName
         : outputFileName;
-      const filePath = path.join(destinationPath, actualFileName);
+      const filePath = commandEntryPath(
+        adapter,
+        destinationPath,
+        actualFileName,
+      );
       const content = await fs.readFile(filePath, "utf-8");
       const result = applyTemplateBlocks(content, commandName, templates);
       if (result !== content) {
@@ -621,7 +856,7 @@ export interface GenerateSkillsResult {
 }
 
 /**
- * Generates skills to .claude/skills/{skill-name}/SKILL.md format.
+ * Generates skills to {agent-dir}/skills/{skill-name}/SKILL.md format.
  * Skills use the Agent Skills standard with name and description in frontmatter.
  */
 export async function generateSkillsToDirectory(

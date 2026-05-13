@@ -1,4 +1,3 @@
-import os from "node:os";
 import path from "node:path";
 import {
   confirm,
@@ -18,8 +17,10 @@ import * as v from "valibot";
 const pc = process.env.FORCE_COLOR ? picocolors.createColors(true) : picocolors;
 
 import {
+  AGENT_ADAPTERS,
+  AGENTS,
+  type Agent,
   checkExistingFiles,
-  DIRECTORIES,
   type ExistingFile,
   FLAG_OPTIONS,
   generateSkillsToDirectory,
@@ -27,8 +28,11 @@ import {
   getCommandsGroupedByCategory,
   getRequestedToolsOptions,
   getScopeOptions,
+  getSkillsPath,
+  resolveAdapter,
   SCOPES,
   type Scope,
+  type SingleAgent,
 } from "./cli-generator.js";
 import { CLI_OPTIONS } from "./cli-options.js";
 import { isInteractiveTTY } from "./tty.js";
@@ -46,13 +50,51 @@ const ScopeSchema = v.union([
   ),
 ]);
 
-function isCustomPath(scope: string): boolean {
-  return scope !== SCOPES.PROJECT && scope !== SCOPES.USER;
+function isCustomPath(scope: string | symbol | undefined): boolean {
+  return (
+    typeof scope === "string" &&
+    scope !== SCOPES.PROJECT &&
+    scope !== SCOPES.USER
+  );
+}
+
+function getAgentOutputPath(
+  scope: string,
+  agent: SingleAgent,
+): string | undefined {
+  if (!isCustomPath(scope)) return undefined;
+  const adapter = resolveAdapter(agent);
+  return path.join(scope, adapter.agentDir, adapter.commandsSubdir);
+}
+
+function agentTargets(agent: Agent): SingleAgent[] {
+  return agent === AGENTS.BOTH ? [AGENTS.OPENCODE, AGENTS.CLAUDE] : [agent];
+}
+
+async function checkExistingFilesForAgents(
+  scope: string,
+  agent: Agent,
+  options: Parameters<typeof checkExistingFiles>[2],
+): Promise<ExistingFile[]> {
+  const results: ExistingFile[] = [];
+  for (const target of agentTargets(agent)) {
+    const files = await checkExistingFiles(
+      getAgentOutputPath(scope, target),
+      scope as Scope,
+      { ...options, agent: target },
+    );
+    results.push(...files);
+  }
+  return results;
 }
 
 // Schema for validating CLI flags
 const FlagValues = FLAG_OPTIONS.map((f) => f.value) as [string, ...string[]];
 const FlagsSchema = v.array(v.picklist(FlagValues));
+
+// Schema for validating CLI agent
+const AgentValues = Object.values(AGENTS) as [Agent, ...Agent[]];
+const AgentSchema = v.picklist(AgentValues);
 
 type LineInfo = {
   text: string;
@@ -205,7 +247,7 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
     \\XX\\       \\X/    \\XXX/    \\X/       /XX/
        "\\       "      \\X/      "       /"
 
-            @wbern/claude-instructions
+            @wbern/agent-instructions
 `;
 
 export interface CliArgs {
@@ -220,6 +262,7 @@ export interface CliArgs {
   allowedTools?: string[];
   includeContribCommands?: boolean;
   skills?: string[];
+  agent?: string;
 }
 
 export async function main(args?: CliArgs): Promise<void> {
@@ -232,7 +275,7 @@ export async function main(args?: CliArgs): Promise<void> {
   let selectedFlags: string[] | symbol | undefined;
   let selectedSkills: string[] | undefined;
   let cachedExistingFiles: ExistingFile[] | undefined;
-  let customOutputPath: string | undefined;
+  let selectedAgent: Agent = AGENTS.OPENCODE;
 
   if (args?.scope) {
     // Non-interactive mode (scope is the only required flag)
@@ -241,13 +284,12 @@ export async function main(args?: CliArgs): Promise<void> {
     selectedCommands = args.commands;
     selectedFlags = args.flags ? v.parse(FlagsSchema, args.flags) : undefined;
     selectedAllowedTools = args.allowedTools;
-
-    // If scope is a custom path, compute the output path
-    if (isCustomPath(scope as string)) {
-      customOutputPath = path.join(
-        scope as string,
-        DIRECTORIES.CLAUDE,
-        DIRECTORIES.COMMANDS,
+    if (args.agent) {
+      selectedAgent = v.parse(AgentSchema, args.agent);
+    } else {
+      selectedAgent = AGENTS.OPENCODE;
+      log.warn(
+        "No --agent specified. Defaulting to opencode. Pass --agent=claude or --agent=opencode explicitly.",
       );
     }
 
@@ -263,16 +305,19 @@ export async function main(args?: CliArgs): Promise<void> {
     }
 
     if (args.updateExisting) {
-      cachedExistingFiles = await checkExistingFiles(
-        customOutputPath,
-        scope as Scope,
+      cachedExistingFiles = await checkExistingFilesForAgents(
+        scope as string,
+        selectedAgent,
         {
           commandPrefix: commandPrefix || "",
           flags: selectedFlags,
           includeContribCommands: args.includeContribCommands,
         },
       );
-      selectedCommands = cachedExistingFiles.map((f) => f.filename);
+      // Deduplicate filenames (same command may exist in both agent dirs)
+      selectedCommands = [
+        ...new Set(cachedExistingFiles.map((f) => f.filename)),
+      ];
 
       if (selectedCommands.length === 0) {
         log.warn("No existing commands found in target directory");
@@ -291,12 +336,39 @@ export async function main(args?: CliArgs): Promise<void> {
       return;
     }
 
-    // Interactive mode: scope first, then flags
+    // Interactive mode: agent target first, then scope, then flags
+    const singleAgentOptions = (
+      Object.keys(AGENT_ADAPTERS) as SingleAgent[]
+    ).map((id) => {
+      const adapter = AGENT_ADAPTERS[id];
+      return {
+        value: id,
+        label: adapter.displayName,
+        hint: adapter.pickerHint,
+      };
+    });
+    const agentChoice = await select({
+      message: "Select target agent",
+      options: [
+        ...singleAgentOptions,
+        { value: AGENTS.BOTH, label: "Both", hint: ".claude/ and .opencode/" },
+      ],
+    });
+
+    if (isCancel(agentChoice)) {
+      return;
+    }
+
+    selectedAgent = agentChoice as Agent;
+
     const terminalWidth = process.stdout.columns || 80;
     const uiOverhead = 25; // checkbox, label, padding
     scope = await select({
       message: "Select installation scope",
-      options: getScopeOptions(terminalWidth - uiOverhead),
+      options: getScopeOptions(
+        terminalWidth - uiOverhead,
+        selectedAgent === AGENTS.BOTH ? AGENTS.OPENCODE : selectedAgent,
+      ),
     });
 
     if (isCancel(scope)) {
@@ -346,9 +418,9 @@ export async function main(args?: CliArgs): Promise<void> {
     let groupedCommands = await getCommandsGroupedByCategory();
 
     if (args?.updateExisting) {
-      cachedExistingFiles = await checkExistingFiles(
-        undefined,
-        scope as Scope,
+      cachedExistingFiles = await checkExistingFilesForAgents(
+        scope as string,
+        selectedAgent,
         {
           commandPrefix: (commandPrefix as string) || "",
           flags: selectedFlags as string[],
@@ -406,11 +478,18 @@ export async function main(args?: CliArgs): Promise<void> {
       }
     }
 
-    // Skills selection - allow users to generate selected commands as skills
+    // Skills selection - allow users to generate selected commands as skills.
+    // BOTH expands to claude+opencode (see agentTargets), which share the flat
+    // skills layout, so showing the opencode hint is accurate for either.
+    const skillsAdapter =
+      selectedAgent === AGENTS.BOTH
+        ? resolveAdapter(AGENTS.OPENCODE)
+        : resolveAdapter(selectedAgent);
+    const skillsHint = `Generate as skill in ${skillsAdapter.agentDir}/${skillsAdapter.skillsSubdir}/`;
     const commandsForSkills = (selectedCommands as string[]).map((cmd) => ({
       value: cmd,
       label: cmd.replace(/\.md$/, ""),
-      hint: "Generate as skill in .claude/skills/",
+      hint: skillsHint,
     }));
     const selectedSkillsResult = await groupMultiselect({
       message: "Select commands to also generate as skills (optional)",
@@ -429,7 +508,7 @@ export async function main(args?: CliArgs): Promise<void> {
 
   const existingFiles =
     cachedExistingFiles ??
-    (await checkExistingFiles(customOutputPath, scope as Scope, {
+    (await checkExistingFilesForAgents(scope as string, selectedAgent, {
       commandPrefix: commandPrefix as string,
       commands: selectedCommands as string[],
       allowedTools: selectedAllowedTools as string[] | undefined,
@@ -519,47 +598,75 @@ export async function main(args?: CliArgs): Promise<void> {
     }
   }
 
-  const result = await generateToDirectory(customOutputPath, scope as Scope, {
-    commandPrefix: commandPrefix as string,
-    skipTemplateInjection: args?.skipTemplateInjection,
-    commands: selectedCommands as string[],
-    skipFiles,
-    allowedTools: selectedAllowedTools as string[] | undefined,
-    flags: selectedFlags as string[] | undefined,
-    includeContribCommands: args?.includeContribCommands,
-  });
+  // For "both" agent, generate to OpenCode first then Claude
+  const agentsToGenerate: SingleAgent[] = agentTargets(selectedAgent);
+
+  let totalFilesGenerated = 0;
+  for (const agentTarget of agentsToGenerate) {
+    const targetAdapter = resolveAdapter(agentTarget);
+    const outputPath = isCustomPath(scope as string)
+      ? path.join(
+          scope as string,
+          targetAdapter.agentDir,
+          targetAdapter.commandsSubdir,
+        )
+      : undefined;
+    const agentResult = await generateToDirectory(outputPath, scope as Scope, {
+      commandPrefix: commandPrefix as string,
+      skipTemplateInjection: args?.skipTemplateInjection,
+      commands: selectedCommands as string[],
+      skipFiles,
+      allowedTools: selectedAllowedTools as string[] | undefined,
+      flags: selectedFlags as string[] | undefined,
+      includeContribCommands: args?.includeContribCommands,
+      agent: agentTarget,
+    });
+    totalFilesGenerated += agentResult.filesGenerated;
+  }
+  const result = { filesGenerated: totalFilesGenerated };
 
   // Generate skills (from interactive selection or --skills CLI option)
   let skillsGenerated = 0;
   const skillsToGenerate = selectedSkills ?? args?.skills;
   if (skillsToGenerate && skillsToGenerate.length > 0) {
-    const skillsBasePath = isCustomPath(scope as string)
-      ? (scope as string)
-      : scope === "project"
-        ? process.cwd()
-        : os.homedir();
-    const skillsPath = path.join(skillsBasePath, DIRECTORIES.CLAUDE, "skills");
-
-    const skillsResult = await generateSkillsToDirectory(
-      skillsPath,
-      skillsToGenerate,
-      { flags: selectedFlags as string[] | undefined },
-    );
-    skillsGenerated = skillsResult.skillsGenerated;
+    for (const agentTarget of agentsToGenerate) {
+      const targetAdapter = resolveAdapter(agentTarget);
+      const skillsPath = isCustomPath(scope as string)
+        ? path.join(
+            scope as string,
+            targetAdapter.agentDir,
+            targetAdapter.skillsSubdir,
+          )
+        : getSkillsPath(scope as string, agentTarget);
+      const skillsResult = await generateSkillsToDirectory(
+        skillsPath,
+        skillsToGenerate,
+        { flags: selectedFlags as string[] | undefined },
+      );
+      skillsGenerated += skillsResult.skillsGenerated;
+    }
   }
 
+  // Primary path for display message (first agent target)
+  const primaryAgent = agentsToGenerate[0];
+  const primaryAdapter = resolveAdapter(primaryAgent);
   const fullPath = isCustomPath(scope as string)
-    ? path.join(scope as string, DIRECTORIES.CLAUDE, DIRECTORIES.COMMANDS)
+    ? path.join(
+        scope as string,
+        primaryAdapter.agentDir,
+        primaryAdapter.commandsSubdir,
+      )
     : scope === "project"
-      ? `${process.cwd()}/.claude/commands`
-      : `${os.homedir()}/.claude/commands`;
+      ? `${process.cwd()}/${primaryAdapter.agentDir}/${primaryAdapter.commandsSubdir}`
+      : primaryAdapter.userCommandsPath();
 
   // Build automation command for interactive mode
   const isInteractiveMode = !args?.scope;
   let automationNote = "";
   if (isInteractiveMode) {
-    const parts = ["claude-instructions"];
+    const parts = ["agent-instructions"];
     parts.push(`--scope=${scope as string}`);
+    parts.push(`--agent=${selectedAgent}`);
     if (commandPrefix) {
       parts.push(`--prefix=${commandPrefix as string}`);
     }
@@ -584,15 +691,29 @@ To automate this setup:
   ${parts.join(" ")}`;
   }
 
+  const primarySkillsPath = isCustomPath(scope as string)
+    ? path.join(
+        scope as string,
+        primaryAdapter.agentDir,
+        primaryAdapter.skillsSubdir,
+      )
+    : scope === "project"
+      ? `${process.cwd()}/${primaryAdapter.agentDir}/${primaryAdapter.skillsSubdir}`
+      : primaryAdapter.userSkillsPath();
   const skillsMessage =
     skillsGenerated > 0
-      ? `\nInstalled ${skillsGenerated} skills to ${fullPath.replace("/commands", "/skills")}`
+      ? `\nInstalled ${skillsGenerated} skills to ${primarySkillsPath}`
       : "";
+
+  const agentRestartNote =
+    selectedAgent === AGENTS.BOTH
+      ? "Restart your agent (OpenCode or Claude Code) to pick up the new commands."
+      : resolveAdapter(selectedAgent).restartHint;
 
   outro(
     `Installed ${result.filesGenerated} commands to ${fullPath}${skillsMessage}
 
-If Claude Code is already running, restart it to pick up the new commands.
+${agentRestartNote}
 
 Try it out:
 
@@ -600,7 +721,7 @@ Try it out:
   /red 1 returns "1"     → Write first failing test for your kata
   /green                 → Make it pass
 
-See a full example: https://github.com/wbern/claude-instructions#example-conversations${automationNote}
+See a full example: https://github.com/wbern/agent-instructions#example-conversations${automationNote}
 
 Happy coding!`,
   );
