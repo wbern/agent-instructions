@@ -18,6 +18,7 @@ export const SCOPES = {
 export const AGENTS = {
   CLAUDE: "claude",
   OPENCODE: "opencode",
+  CODEX: "codex",
   BOTH: "both",
 } as const;
 
@@ -26,10 +27,70 @@ export type Agent = (typeof AGENTS)[keyof typeof AGENTS];
 export const DIRECTORIES = {
   CLAUDE: ".claude",
   OPENCODE: ".opencode",
+  CODEX: ".codex",
   COMMANDS: "commands",
   SKILLS: "skills",
   SOURCES: "src/sources",
 } as const;
+
+export interface AgentAdapter {
+  id: "claude" | "opencode" | "codex";
+  agentDir: string;
+  commandsSubdir: string;
+  skillsSubdir: string;
+  layoutMode: "flat" | "directory";
+  entryFile?: string;
+  fileExtension: string;
+  companionInstructionsFile: "CLAUDE.md" | "AGENTS.md";
+  supportsAllowedTools: boolean;
+  userCommandsPath(): string;
+  userSkillsPath(): string;
+}
+
+export const AGENT_ADAPTERS: Record<
+  "claude" | "opencode" | "codex",
+  AgentAdapter
+> = {
+  claude: {
+    id: "claude",
+    agentDir: ".claude",
+    commandsSubdir: "commands",
+    skillsSubdir: "skills",
+    layoutMode: "flat",
+    fileExtension: ".md",
+    companionInstructionsFile: "CLAUDE.md",
+    supportsAllowedTools: true,
+    userCommandsPath: () => path.join(os.homedir(), ".claude", "commands"),
+    userSkillsPath: () => path.join(os.homedir(), ".claude", "skills"),
+  },
+  opencode: {
+    id: "opencode",
+    agentDir: ".opencode",
+    commandsSubdir: "commands",
+    skillsSubdir: "skills",
+    layoutMode: "flat",
+    fileExtension: ".md",
+    companionInstructionsFile: "AGENTS.md",
+    supportsAllowedTools: false,
+    userCommandsPath: () =>
+      path.join(os.homedir(), ".config", "opencode", "commands"),
+    userSkillsPath: () =>
+      path.join(os.homedir(), ".config", "opencode", "skills"),
+  },
+  codex: {
+    id: "codex",
+    agentDir: ".codex",
+    commandsSubdir: "skills",
+    skillsSubdir: "skills",
+    layoutMode: "directory",
+    entryFile: "SKILL.md",
+    fileExtension: ".md",
+    companionInstructionsFile: "AGENTS.md",
+    supportsAllowedTools: false,
+    userCommandsPath: () => path.join(os.homedir(), ".codex", "skills"),
+    userSkillsPath: () => path.join(os.homedir(), ".codex", "skills"),
+  },
+};
 
 export const TEMPLATE_SOURCE_FILES = ["CLAUDE.md", "AGENTS.md"] as const;
 
@@ -118,19 +179,75 @@ export const FLAG_OPTIONS = [
   },
 ] as const;
 
+function resolveAdapter(agent: Agent): AgentAdapter {
+  if (agent === AGENTS.BOTH) {
+    return AGENT_ADAPTERS.opencode;
+  }
+  return AGENT_ADAPTERS[agent as keyof typeof AGENT_ADAPTERS];
+}
+
+/**
+ * Resolve the on-disk path for a command's entry file under a destination
+ * directory, honoring the adapter's layout mode (flat vs directory-per-command).
+ */
+function commandEntryPath(
+  adapter: AgentAdapter,
+  destinationPath: string,
+  baseFileName: string,
+): string {
+  if (adapter.layoutMode === "directory" && adapter.entryFile) {
+    const skillName = baseFileName.replace(/\.md$/, "");
+    return path.join(destinationPath, skillName, adapter.entryFile);
+  }
+  return path.join(destinationPath, baseFileName);
+}
+
+/**
+ * Inject `name: <skillName>` into existing YAML frontmatter, or prepend a fresh
+ * frontmatter block if none exists.
+ */
+export function injectNameIntoFrontmatter(
+  content: string,
+  skillName: string,
+): string {
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) {
+    return `---\nname: ${skillName}\n---\n\n${content}`;
+  }
+  if (/^name:/m.test(fmMatch[1])) {
+    return content.replace(/^name:.*$/m, `name: ${skillName}`);
+  }
+  return content.replace(/^---\n/, `---\nname: ${skillName}\n`);
+}
+
+async function writeCommandFile(
+  adapter: AgentAdapter,
+  destinationPath: string,
+  baseFileName: string,
+  content: string,
+): Promise<void> {
+  const filePath = commandEntryPath(adapter, destinationPath, baseFileName);
+  if (adapter.layoutMode === "directory") {
+    await fs.ensureDir(path.dirname(filePath));
+    const skillName = baseFileName.replace(/\.md$/, "");
+    const withName = injectNameIntoFrontmatter(content, skillName);
+    await fs.writeFile(filePath, withName);
+    return;
+  }
+  await fs.writeFile(filePath, content);
+}
+
 export function getScopeOptions(
   terminalWidth: number = 80,
   agent: Agent = AGENTS.OPENCODE,
 ) {
-  const agentDir =
-    agent === AGENTS.CLAUDE ? DIRECTORIES.CLAUDE : DIRECTORIES.OPENCODE;
-  const userConfigDir =
-    agent === AGENTS.CLAUDE
-      ? path.join(os.homedir(), DIRECTORIES.CLAUDE)
-      : path.join(os.homedir(), ".config", "opencode");
-
-  const projectPath = path.join(process.cwd(), agentDir, DIRECTORIES.COMMANDS);
-  const userPath = path.join(userConfigDir, DIRECTORIES.COMMANDS);
+  const adapter = resolveAdapter(agent);
+  const projectPath = path.join(
+    process.cwd(),
+    adapter.agentDir,
+    adapter.commandsSubdir,
+  );
+  const userPath = adapter.userCommandsPath();
 
   return [
     {
@@ -197,20 +314,23 @@ export async function checkExistingFiles(
   const templates = await loadTemplateBlocks(
     scope,
     options?.skipTemplateInjection,
-    options?.agent,
   );
 
   const baseDir = path.join(__dirname, "..");
+  const adapter = resolveAdapter(options?.agent ?? AGENTS.OPENCODE);
 
   for (const file of files) {
     const outputFileName = stripContribPrefix(file);
     const destFileName = prefix + outputFileName;
-    const destFilePath = path.join(destinationPath, destFileName);
+    const destFilePath = commandEntryPath(
+      adapter,
+      destinationPath,
+      destFileName,
+    );
     const sourceFilePath = path.join(sourcePath, file);
 
     if (await fs.pathExists(destFilePath)) {
       const existingContent = await fs.readFile(destFilePath, "utf-8");
-      // Expand source content with flags, strip internal metadata, apply markdown fixes
       const sourceContent = await fs.readFile(sourceFilePath, "utf-8");
       let newContent = applyMarkdownFixes(
         stripInternalMetadata(
@@ -235,6 +355,11 @@ export async function checkExistingFiles(
             `---\n${allowedToolsYaml}\n`,
           );
         }
+      }
+
+      if (adapter.layoutMode === "directory") {
+        const skillName = destFileName.replace(/\.md$/, "");
+        newContent = injectNameIntoFrontmatter(newContent, skillName);
       }
 
       if (templates.length > 0) {
@@ -399,18 +524,13 @@ function getDestinationPath(
     return outputPath;
   }
 
+  const adapter = resolveAdapter(agent);
   if (scope === SCOPES.PROJECT) {
-    const agentDir =
-      agent === AGENTS.CLAUDE ? DIRECTORIES.CLAUDE : DIRECTORIES.OPENCODE;
-    return path.join(process.cwd(), agentDir, DIRECTORIES.COMMANDS);
+    return path.join(process.cwd(), adapter.agentDir, adapter.commandsSubdir);
   }
 
   if (scope === SCOPES.USER) {
-    if (agent === AGENTS.CLAUDE) {
-      return path.join(os.homedir(), DIRECTORIES.CLAUDE, DIRECTORIES.COMMANDS);
-    }
-    // OpenCode user-level: ~/.config/opencode/commands/
-    return path.join(os.homedir(), ".config", "opencode", DIRECTORIES.COMMANDS);
+    return adapter.userCommandsPath();
   }
 
   throw new Error("Either outputPath or scope must be provided");
@@ -423,16 +543,11 @@ export function getSkillsPath(
   scope: string,
   agent: Agent = AGENTS.OPENCODE,
 ): string {
+  const adapter = resolveAdapter(agent);
   if (scope === SCOPES.PROJECT) {
-    const agentDir =
-      agent === AGENTS.CLAUDE ? DIRECTORIES.CLAUDE : DIRECTORIES.OPENCODE;
-    return path.join(process.cwd(), agentDir, DIRECTORIES.SKILLS);
+    return path.join(process.cwd(), adapter.agentDir, adapter.skillsSubdir);
   }
-  if (agent === AGENTS.CLAUDE) {
-    return path.join(os.homedir(), DIRECTORIES.CLAUDE, DIRECTORIES.SKILLS);
-  }
-  // OpenCode user-level: ~/.config/opencode/skills/
-  return path.join(os.homedir(), ".config", "opencode", DIRECTORIES.SKILLS);
+  return adapter.userSkillsPath();
 }
 
 /**
@@ -557,17 +672,11 @@ export function extractTemplateBlocks(content: string): TemplateBlock[] {
 async function loadTemplateBlocks(
   scope?: Scope | string,
   skipTemplateInjection?: boolean,
-  agent?: Agent,
 ): Promise<TemplateBlock[]> {
   if (skipTemplateInjection || scope === SCOPES.USER) {
     return [];
   }
-  // Check agent-native file first: AGENTS.md for OpenCode, CLAUDE.md for Claude
-  const sourceFiles =
-    agent === AGENTS.OPENCODE
-      ? ([...TEMPLATE_SOURCE_FILES].reverse() as string[])
-      : (TEMPLATE_SOURCE_FILES as readonly string[]);
-  for (const filename of sourceFiles) {
+  for (const filename of TEMPLATE_SOURCE_FILES) {
     const candidatePath = path.join(process.cwd(), filename);
     if (await fs.pathExists(candidatePath)) {
       const content = await fs.readFile(candidatePath, "utf-8");
@@ -623,6 +732,7 @@ export async function generateToDirectory(
   await fs.ensureDir(destinationPath);
   const baseDir = path.join(__dirname, "..");
   const targetAgent = options?.agent ?? AGENTS.OPENCODE;
+  const adapter = resolveAdapter(targetAgent);
   for (const file of files) {
     const sourceFilePath = path.join(sourcePath, file);
     const sourceContent = await fs.readFile(sourceFilePath, "utf-8");
@@ -631,23 +741,23 @@ export async function generateToDirectory(
       baseDir,
     });
     let processedContent = stripInternalMetadata(expandedContent);
-    // Strip Claude Code-specific frontmatter when generating for OpenCode
-    if (targetAgent !== AGENTS.CLAUDE) {
+    if (!adapter.supportsAllowedTools) {
       processedContent = stripClaudeOnlyFrontmatter(processedContent);
     }
     const cleanedContent = applyMarkdownFixes(processedContent);
     const outputFileName = stripContribPrefix(file);
-    await fs.writeFile(
-      path.join(destinationPath, prefix + outputFileName),
+    await writeCommandFile(
+      adapter,
+      destinationPath,
+      prefix + outputFileName,
       cleanedContent,
     );
   }
 
-  // allowed-tools is a Claude Code-specific frontmatter feature; skip for OpenCode
   if (
     options?.allowedTools &&
     options.allowedTools.length > 0 &&
-    targetAgent === AGENTS.CLAUDE
+    adapter.supportsAllowedTools
   ) {
     const metadata = await loadCommandsMetadata();
     const allowedToolsSet = new Set(options.allowedTools);
@@ -678,7 +788,6 @@ export async function generateToDirectory(
   const templates = await loadTemplateBlocks(
     scope,
     options?.skipTemplateInjection,
-    options?.agent,
   );
   let templateInjected = false;
 
@@ -689,7 +798,11 @@ export async function generateToDirectory(
       const actualFileName = options?.commandPrefix
         ? options.commandPrefix + outputFileName
         : outputFileName;
-      const filePath = path.join(destinationPath, actualFileName);
+      const filePath = commandEntryPath(
+        adapter,
+        destinationPath,
+        actualFileName,
+      );
       const content = await fs.readFile(filePath, "utf-8");
       const result = applyTemplateBlocks(content, commandName, templates);
       if (result !== content) {

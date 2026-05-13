@@ -21,7 +21,7 @@ export const CLI_OPTIONS: CliOption[] = [
     flag: "--agent",
     key: "agent",
     type: "string",
-    description: "Target agent (opencode, claude, both)",
+    description: "Target agent (opencode, claude, codex, both)",
     example: "--agent=opencode",
   },
   {

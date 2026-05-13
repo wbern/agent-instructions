@@ -27,11 +27,11 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
        "\       "      \X/      "       /"
 ```
 
-**TDD workflow commands for AI coding agents (Claude Code, OpenCode).**
+**TDD workflow commands for AI coding agents (Claude Code, OpenCode, Codex).**
 
 > "TDD helps you to pay attention to the right issues at the right time so you can make your designs cleaner, you can refine your designs as you learn." — Kent Beck
 
-AI coding agents like [Claude Code](https://docs.anthropic.com/en/docs/claude-code/slash-commands) and [OpenCode](https://opencode.ai/docs/commands/) support custom slash commands — type `/foo` and the agent receives the contents of `foo.md` as instructions. This repo provides ready-made commands for Test-Driven Development workflows.
+AI coding agents like [Claude Code](https://docs.anthropic.com/en/docs/claude-code/slash-commands), [OpenCode](https://opencode.ai/docs/commands/), and [Codex](https://github.com/openai/codex) support custom slash commands / skills — type `/foo` and the agent receives the contents of `foo.md` as instructions. This repo provides ready-made commands for Test-Driven Development workflows.
 
 Custom commands are just a glorified copy-paste mechanism—but that simplicity is what makes them effective for establishing consistent development practices.
 

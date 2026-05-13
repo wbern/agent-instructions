@@ -61,9 +61,16 @@ vi.mock("./cli-generator.js", () => ({
   DIRECTORIES: {
     CLAUDE: ".claude",
     OPENCODE: ".opencode",
+    CODEX: ".codex",
     COMMANDS: "commands",
+    SKILLS: "skills",
   },
-  AGENTS: { CLAUDE: "claude", OPENCODE: "opencode", BOTH: "both" },
+  AGENTS: {
+    CLAUDE: "claude",
+    OPENCODE: "opencode",
+    CODEX: "codex",
+    BOTH: "both",
+  },
   getSkillsPath: vi.fn().mockReturnValue("/mock/path/.opencode/skills"),
   getCommandsGroupedByCategory: vi.fn().mockResolvedValue({
     "TDD Cycle": [
@@ -258,6 +265,30 @@ describe("CLI", () => {
     );
   });
 
+  it("should show .codex/skills/ hint in skills prompt when agent is codex", async () => {
+    const { groupMultiselect } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await setupInteractiveMocks({ agent: "codex", allowedTools: [] });
+
+    await main();
+
+    const skillsCall = vi
+      .mocked(groupMultiselect)
+      .mock.calls.find((call) =>
+        (call[0] as { message: string }).message?.includes("skills"),
+      );
+    expect(skillsCall).toBeDefined();
+    const opts = (skillsCall![0] as { options: Record<string, unknown[]> })
+      .options;
+    const availableCommands = opts["Available commands"] as Array<{
+      hint: string;
+    }>;
+    expect(availableCommands[0].hint).toBe(
+      "Generate as skill in .codex/skills/",
+    );
+  });
+
   it("should exit gracefully when user cancels on agent selection", async () => {
     const { generateToDirectory } = await import("./cli-generator.js");
     const { main } = await import("./cli.js");
@@ -381,6 +412,17 @@ describe("CLI", () => {
     );
   });
 
+  it("should show Codex restart hint when agent is codex", async () => {
+    const { outro } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await main({ scope: "project", agent: "codex" });
+
+    expect(outro).toHaveBeenCalledWith(
+      expect.stringContaining("Codex is already running"),
+    );
+  });
+
   it("should use .claude path for user-level claude agent", async () => {
     const { outro } = await import("@clack/prompts");
     const { main } = await import("./cli.js");
@@ -389,6 +431,17 @@ describe("CLI", () => {
 
     expect(outro).toHaveBeenCalledWith(
       expect.stringContaining(".claude/commands"),
+    );
+  });
+
+  it("should use .codex/skills path for user-level codex agent", async () => {
+    const { outro } = await import("@clack/prompts");
+    const { main } = await import("./cli.js");
+
+    await main({ scope: "user", agent: "codex" });
+
+    expect(outro).toHaveBeenCalledWith(
+      expect.stringContaining(".codex/skills"),
     );
   });
 

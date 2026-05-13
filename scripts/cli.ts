@@ -58,12 +58,19 @@ function isCustomPath(scope: string | symbol | undefined): boolean {
 }
 
 function getAgentDir(agent: Agent): string {
-  return agent === AGENTS.CLAUDE ? DIRECTORIES.CLAUDE : DIRECTORIES.OPENCODE;
+  if (agent === AGENTS.CLAUDE) return DIRECTORIES.CLAUDE;
+  if (agent === AGENTS.CODEX) return DIRECTORIES.CODEX;
+  return DIRECTORIES.OPENCODE;
+}
+
+function getAgentCommandsSubdir(agent: Agent): string {
+  // Codex uses a single "skills" directory for both commands and skills.
+  return agent === AGENTS.CODEX ? DIRECTORIES.SKILLS : DIRECTORIES.COMMANDS;
 }
 
 function getAgentOutputPath(scope: string, agent: Agent): string | undefined {
   return isCustomPath(scope)
-    ? path.join(scope, getAgentDir(agent), DIRECTORIES.COMMANDS)
+    ? path.join(scope, getAgentDir(agent), getAgentCommandsSubdir(agent))
     : undefined;
 }
 
@@ -350,6 +357,11 @@ export async function main(args?: CliArgs): Promise<void> {
           label: "OpenCode",
           hint: ".opencode/commands/",
         },
+        {
+          value: AGENTS.CODEX,
+          label: "Codex",
+          hint: ".codex/skills/",
+        },
         { value: AGENTS.BOTH, label: "Both", hint: ".claude/ and .opencode/" },
       ],
     });
@@ -481,7 +493,9 @@ export async function main(args?: CliArgs): Promise<void> {
     const skillsHint =
       selectedAgent === AGENTS.CLAUDE
         ? "Generate as skill in .claude/skills/"
-        : "Generate as skill in .opencode/skills/";
+        : selectedAgent === AGENTS.CODEX
+          ? "Generate as skill in .codex/skills/"
+          : "Generate as skill in .opencode/skills/";
     const commandsForSkills = (selectedCommands as string[]).map((cmd) => ({
       value: cmd,
       label: cmd.replace(/\.md$/, ""),
@@ -606,7 +620,7 @@ export async function main(args?: CliArgs): Promise<void> {
       ? path.join(
           scope as string,
           getAgentDir(agentTarget),
-          DIRECTORIES.COMMANDS,
+          getAgentCommandsSubdir(agentTarget),
         )
       : undefined;
     const agentResult = await generateToDirectory(outputPath, scope as Scope, {
@@ -644,13 +658,16 @@ export async function main(args?: CliArgs): Promise<void> {
   // Primary path for display message (first agent target)
   const primaryAgent = agentsToGenerate[0];
   const primaryAgentDir = getAgentDir(primaryAgent);
+  const primaryCommandsSubdir = getAgentCommandsSubdir(primaryAgent);
   const fullPath = isCustomPath(scope as string)
-    ? path.join(scope as string, primaryAgentDir, DIRECTORIES.COMMANDS)
+    ? path.join(scope as string, primaryAgentDir, primaryCommandsSubdir)
     : scope === "project"
-      ? `${process.cwd()}/${primaryAgentDir}/commands`
+      ? `${process.cwd()}/${primaryAgentDir}/${primaryCommandsSubdir}`
       : primaryAgent === AGENTS.CLAUDE
         ? `${os.homedir()}/.claude/commands`
-        : `${os.homedir()}/.config/opencode/commands`;
+        : primaryAgent === AGENTS.CODEX
+          ? `${os.homedir()}/.codex/skills`
+          : `${os.homedir()}/.config/opencode/commands`;
 
   // Build automation command for interactive mode
   const isInteractiveMode = !args?.scope;
@@ -691,9 +708,11 @@ To automate this setup:
   const agentRestartNote =
     selectedAgent === AGENTS.CLAUDE
       ? "If Claude Code is already running, restart it to pick up the new commands."
-      : selectedAgent === AGENTS.BOTH
-        ? "Restart your agent (OpenCode or Claude Code) to pick up the new commands."
-        : "If OpenCode is already running, restart it to pick up the new commands.";
+      : selectedAgent === AGENTS.CODEX
+        ? "If Codex is already running, restart it to pick up the new skills."
+        : selectedAgent === AGENTS.BOTH
+          ? "Restart your agent (OpenCode or Claude Code) to pick up the new commands."
+          : "If OpenCode is already running, restart it to pick up the new commands.";
 
   outro(
     `Installed ${result.filesGenerated} commands to ${fullPath}${skillsMessage}

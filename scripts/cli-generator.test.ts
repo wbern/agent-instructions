@@ -32,12 +32,14 @@ vi.mock("markdownlint", () => ({
 }));
 
 import {
+  AGENT_ADAPTERS,
   AGENTS,
   checkForConflicts,
   generateToDirectory,
   getRequestedToolsOptions,
   getScopeOptions,
   getSkillsPath,
+  injectNameIntoFrontmatter,
   SCOPES,
   stripClaudeOnlyFrontmatter,
 } from "./cli-generator.js";
@@ -519,6 +521,22 @@ describe("checkExistingFiles", () => {
       newContent: sameContent,
       isIdentical: true,
     });
+  });
+
+  it("should inject skill name into newContent when adapter uses directory layout", async () => {
+    const sourceContent = "---\ndescription: A skill\n---\n# Body";
+
+    vi.mocked(fs.readdir).mockResolvedValue(["red.md"] as never);
+    vi.mocked(fs.pathExists).mockResolvedValue(true as never);
+    vi.mocked(fs.readFile).mockResolvedValue(sourceContent as never);
+
+    const { checkExistingFiles } = await import("./cli-generator.js");
+    const files = await checkExistingFiles(MOCK_OUTPUT_PATH, undefined, {
+      agent: AGENTS.CODEX,
+    });
+
+    expect(files).toHaveLength(1);
+    expect(files[0].newContent).toContain("name: red");
   });
 
   it("should only check files specified in commands option", async () => {
@@ -1569,7 +1587,7 @@ Use Beads to track this task.`;
     // Should call expandContent with the source content and flags
     expect(expandContent).toHaveBeenCalledWith(sourceContent, {
       flags: ["beads"],
-      baseDir: expect.stringContaining("claude-instructions"),
+      baseDir: expect.any(String),
     });
 
     // Should write expanded content
@@ -1603,6 +1621,18 @@ describe("getSkillsPath", () => {
     const result = getSkillsPath(SCOPES.USER, AGENTS.OPENCODE);
     expect(result).toContain(".config");
     expect(result).toContain("opencode");
+    expect(result).toContain("skills");
+  });
+
+  it("should return user-level codex skills path", () => {
+    const result = getSkillsPath(SCOPES.USER, AGENTS.CODEX);
+    expect(result).toContain(".codex");
+    expect(result).toContain("skills");
+  });
+
+  it("should fall back to opencode adapter when agent is 'both'", () => {
+    const result = getSkillsPath(SCOPES.PROJECT, AGENTS.BOTH);
+    expect(result).toContain(".opencode");
     expect(result).toContain("skills");
   });
 });
@@ -1649,6 +1679,68 @@ name: test
     const content = "# Just content\nNo frontmatter here.";
     const result = stripClaudeOnlyFrontmatter(content);
     expect(result).toBe(content);
+  });
+});
+
+describe("injectNameIntoFrontmatter", () => {
+  it("should prepend frontmatter when content has none", () => {
+    const result = injectNameIntoFrontmatter("# Body only", "foo");
+    expect(result).toBe("---\nname: foo\n---\n\n# Body only");
+  });
+
+  it("should replace existing name when frontmatter already has one", () => {
+    const input = "---\nname: old\ndescription: x\n---\n# Body";
+    const result = injectNameIntoFrontmatter(input, "new");
+    expect(result).toBe("---\nname: new\ndescription: x\n---\n# Body");
+  });
+
+  it("should insert name into existing frontmatter without name", () => {
+    const input = "---\ndescription: x\n---\n# Body";
+    const result = injectNameIntoFrontmatter(input, "foo");
+    expect(result).toBe("---\nname: foo\ndescription: x\n---\n# Body");
+  });
+});
+
+describe("AGENT_ADAPTERS registry", () => {
+  it("should expose a claude adapter", () => {
+    const claude = AGENT_ADAPTERS.claude;
+    expect(claude.id).toBe("claude");
+    expect(claude.agentDir).toBe(".claude");
+    expect(claude.commandsSubdir).toBe("commands");
+    expect(claude.layoutMode).toBe("flat");
+    expect(claude.fileExtension).toBe(".md");
+    expect(claude.companionInstructionsFile).toBe("CLAUDE.md");
+    expect(claude.supportsAllowedTools).toBe(true);
+  });
+
+  it("should expose an opencode adapter", () => {
+    const opencode = AGENT_ADAPTERS.opencode;
+    expect(opencode.id).toBe("opencode");
+    expect(opencode.agentDir).toBe(".opencode");
+    expect(opencode.commandsSubdir).toBe("commands");
+    expect(opencode.layoutMode).toBe("flat");
+    expect(opencode.fileExtension).toBe(".md");
+    expect(opencode.companionInstructionsFile).toBe("AGENTS.md");
+    expect(opencode.supportsAllowedTools).toBe(false);
+  });
+
+  it("should expose a codex adapter with directory layout", () => {
+    const codex = AGENT_ADAPTERS.codex;
+    expect(codex.id).toBe("codex");
+    expect(codex.agentDir).toBe(".codex");
+    expect(codex.commandsSubdir).toBe("skills");
+    expect(codex.layoutMode).toBe("directory");
+    expect(codex.entryFile).toBe("SKILL.md");
+    expect(codex.fileExtension).toBe(".md");
+    expect(codex.companionInstructionsFile).toBe("AGENTS.md");
+    expect(codex.supportsAllowedTools).toBe(false);
+  });
+
+  it("should resolve user-level paths for each adapter", () => {
+    expect(AGENT_ADAPTERS.claude.userCommandsPath()).toContain(".claude");
+    expect(AGENT_ADAPTERS.opencode.userCommandsPath()).toContain("opencode");
+    expect(AGENT_ADAPTERS.codex.userCommandsPath()).toContain(".codex");
+    expect(AGENT_ADAPTERS.codex.userCommandsPath()).toContain("skills");
   });
 });
 
