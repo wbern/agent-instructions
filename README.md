@@ -16,6 +16,10 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/wbern/agent-instructions/pulls)
 [![Commands](https://img.shields.io/badge/commands-30-blue)](https://github.com/wbern/agent-instructions#available-commands)
 
+[![Supports Claude Code](https://img.shields.io/badge/Supports-Claude%20Code-D97757?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code/slash-commands)
+[![Supports OpenCode](https://img.shields.io/badge/Supports-OpenCode-FF6B35)](https://opencode.ai/docs/commands/)
+[![Supports Codex](https://img.shields.io/badge/Supports-Codex-10A37F?logo=openai&logoColor=white)](https://github.com/openai/codex)
+
 ```
        _==/          i     i          \==_
      /XX/            |\___/|            \XX\
