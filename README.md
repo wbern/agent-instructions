@@ -84,7 +84,7 @@ Then add a postinstall script to your `package.json`:
     "postinstall": "agent-instructions --scope=project --agent=both --overwrite"
   },
   "devDependencies": {
-    "@wbern/agent-instructions": "^2.11.0"
+    "@wbern/agent-instructions": "^3.0.0"
   }
 }
 ```
