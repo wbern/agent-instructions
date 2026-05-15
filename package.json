@@ -1,6 +1,6 @@
 {
   "name": "@wbern/agent-instructions",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "TDD workflow commands for AI coding agents (Claude Code, OpenCode)",
   "publishConfig": {
     "access": "public"
