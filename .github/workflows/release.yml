@@ -38,7 +38,14 @@ jobs:
         run: pnpm build && pnpm build:cli
 
       - name: Run tests
-        run: pnpm vitest run --coverage --reporter=junit --outputFile=test-report.junit.xml
+        run: pnpm vitest run --coverage --reporter=default --reporter=junit --outputFile=test-report.junit.xml
+
+      - name: Upload junit report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: test-report.junit.xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
