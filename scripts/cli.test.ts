@@ -1264,9 +1264,9 @@ NEW LAST`;
         { value: "green.md", label: "green.md", selectedByDefault: true },
       ],
       "Ship / Show / Ask": [
-        { value: "ship.md", label: "ship.md", selectedByDefault: false },
-        { value: "show.md", label: "show.md", selectedByDefault: false },
-        { value: "ask.md", label: "ask.md", selectedByDefault: false },
+        { value: "pr-ship.md", label: "pr-ship.md", selectedByDefault: false },
+        { value: "pr-show.md", label: "pr-show.md", selectedByDefault: false },
+        { value: "pr-ask.md", label: "pr-ask.md", selectedByDefault: false },
       ],
     });
 
@@ -1289,9 +1289,9 @@ NEW LAST`;
     expect(groupMultiselect).toHaveBeenCalledWith(
       expect.objectContaining({
         initialValues: expect.not.arrayContaining([
-          "ship.md",
-          "show.md",
-          "ask.md",
+          "pr-ship.md",
+          "pr-show.md",
+          "pr-ask.md",
         ]),
       }),
     );

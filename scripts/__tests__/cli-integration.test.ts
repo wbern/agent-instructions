@@ -328,7 +328,6 @@ describe("CLI Integration", () => {
       "pr.md",
       "summarize.md",
       "gap.md",
-      "forever.md",
       "code-review.md",
       "polish.md",
       "worktree-add.md",

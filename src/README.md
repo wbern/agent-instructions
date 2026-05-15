@@ -151,7 +151,7 @@ When you run `agent-instructions`, the template content is appended to all gener
 Use the `commands` attribute to inject content only into specific commands:
 
 ```markdown
-<agent-commands-template commands="commit,ask">
+<agent-commands-template commands="commit,pr-ask">
 ## Git Conventions
 
 - Use conventional commits format
@@ -159,7 +159,7 @@ Use the `commands` attribute to inject content only into specific commands:
 </agent-commands-template>
 ```
 
-This injects the content only into `commit.md` and `ask.md`.
+This injects the content only into `commit.md` and `pr-ask.md`.
 
 ### File Priority
 
@@ -199,9 +199,9 @@ flowchart TB
     Step3 --> Commit[📦 /commit<br/>Create commit]
     Commit --> ShipChoice{How to<br/>merge?}
 
-    ShipChoice -->|Simple change| Ship[🚢 /ship<br/>Direct to main<br/><i>Requires: GitHub MCP</i>]
-    ShipChoice -->|Show team| Show[👀 /show<br/>Auto-merge + notify<br/><i>Requires: GitHub MCP</i>]
-    ShipChoice -->|Needs review| Ask[💬 /ask<br/>Create PR<br/><i>Requires: GitHub MCP</i>]
+    ShipChoice -->|Simple change| Ship[🚢 /pr-ship<br/>Direct to main<br/><i>Requires: GitHub MCP</i>]
+    ShipChoice -->|Show team| Show[👀 /pr-show<br/>Auto-merge + notify<br/><i>Requires: GitHub MCP</i>]
+    ShipChoice -->|Needs review| Ask[💬 /pr-ask<br/>Create PR<br/><i>Requires: GitHub MCP</i>]
 
     Ship --> Done([✅ Done])
     Show --> Done
@@ -284,7 +284,7 @@ Claude executes the complete red-green-refactor cycle: writes a failing test, im
 Claude reviews changes, drafts a commit message following project standards, and creates the commit.
 
 ```
-/ask
+/pr-ask
 ```
 
 Claude analyzes commits, creates a PR with summary and test plan.

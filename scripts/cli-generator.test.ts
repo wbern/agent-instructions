@@ -835,7 +835,7 @@ describe("getCommandsGroupedByCategory", () => {
   it("should return categories in defined order with Test-Driven Development first and Ship / Show / Ask last", async () => {
     const { generateCommandsMetadata } = await import("./generate-readme.js");
     const mockMetadata = {
-      "ship.md": {
+      "pr-ship.md": {
         description: "Ship",
         category: "Ship / Show / Ask",
         order: 1,

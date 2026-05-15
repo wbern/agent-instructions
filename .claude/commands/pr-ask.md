@@ -137,9 +137,9 @@ Use **Ask** when:
 - ✅ Multiple solutions possible
 - ✅ Security implications
 
-Use **/show** instead if: confident in approach, just want visibility
+Use **/pr-show** instead if: confident in approach, just want visibility
 
-Use **/ship** instead if: change is tiny, obvious, and safe
+Use **/pr-ship** instead if: change is tiny, obvious, and safe
 
 ### Beads Integration
 

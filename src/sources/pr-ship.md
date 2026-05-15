@@ -67,7 +67,7 @@ Ship: $ARGUMENTS
    - Do all tests pass?
    - Is CI green?
 
-   If ANY of these are "no", suggest using `/show` or `/ask` instead.
+   If ANY of these are "no", suggest using `/pr-show` or `/pr-ask` instead.
 
 5. **Merge to Main**: If all checks pass and user confirms:
 
@@ -91,8 +91,8 @@ Ship: $ARGUMENTS
 
 If tests fail, linter fails, or changes are large/complex, STOP and suggest:
 
-- Use `/show` for changes that should be seen but don't need approval
-- Use `/ask` (traditional PR) for complex changes needing discussion
+- Use `/pr-show` for changes that should be seen but don't need approval
+- Use `/pr-ask` (traditional PR) for complex changes needing discussion
 
 <!-- docs INCLUDE path='src/fragments/beads-integration.md' featureFlag='beads' -->
 <!-- /docs -->

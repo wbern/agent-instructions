@@ -346,10 +346,10 @@ describe("generateCommandsMetadata", () => {
 
     const result = await generateCommandsMetadata();
 
-    // ship.md, show.md, ask.md have _selectedByDefault: false
-    expect(result["ship.md"].selectedByDefault).toBe(false);
-    expect(result["show.md"].selectedByDefault).toBe(false);
-    expect(result["ask.md"].selectedByDefault).toBe(false);
+    // pr-ship.md, pr-show.md, pr-ask.md have _selectedByDefault: false
+    expect(result["pr-ship.md"].selectedByDefault).toBe(false);
+    expect(result["pr-show.md"].selectedByDefault).toBe(false);
+    expect(result["pr-ask.md"].selectedByDefault).toBe(false);
   });
 
   it("should not include selectedByDefault when _selectedByDefault is not false", async () => {

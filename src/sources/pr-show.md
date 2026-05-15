@@ -106,9 +106,9 @@ Use **Show** when:
 - ✅ You're confident in the approach
 - ✅ Team should be aware of the change
 
-Use **/ship** instead if: change is tiny and obvious (typo, formatting)
+Use **/pr-ship** instead if: change is tiny and obvious (typo, formatting)
 
-Use **/ask** instead if: change needs discussion, breaks APIs, or you're uncertain
+Use **/pr-ask** instead if: change needs discussion, breaks APIs, or you're uncertain
 
 <!-- docs INCLUDE path='src/fragments/beads-integration.md' featureFlag='beads' -->
 <!-- /docs -->

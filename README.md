@@ -14,7 +14,7 @@
 [![Made with Claude Code](https://img.shields.io/badge/Made%20with-Claude%20Code-blueviolet)](https://claude.ai/code)
 [![Contributors](https://img.shields.io/github/contributors/wbern/agent-instructions)](https://github.com/wbern/agent-instructions/graphs/contributors)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](https://github.com/wbern/agent-instructions/pulls)
-[![Commands](https://img.shields.io/badge/commands-30-blue)](https://github.com/wbern/agent-instructions#available-commands)
+[![Commands](https://img.shields.io/badge/commands-29-blue)](https://github.com/wbern/agent-instructions#available-commands)
 
 [![Supports Claude Code](https://img.shields.io/badge/Supports-Claude%20Code-D97757?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code/slash-commands)
 [![Supports OpenCode](https://img.shields.io/badge/Supports-OpenCode-FF6B35)](https://opencode.ai/docs/commands/)
@@ -168,7 +168,7 @@ When you run `agent-instructions`, the template content is appended to all gener
 Use the `commands` attribute to inject content only into specific commands:
 
 ```markdown
-<agent-commands-template commands="commit,ask">
+<agent-commands-template commands="commit,pr-ask">
 ## Git Conventions
 
 - Use conventional commits format
@@ -176,7 +176,7 @@ Use the `commands` attribute to inject content only into specific commands:
 </agent-commands-template>
 ```
 
-This injects the content only into `commit.md` and `ask.md`.
+This injects the content only into `commit.md` and `pr-ask.md`.
 
 ### File Priority
 
@@ -216,9 +216,9 @@ flowchart TB
     Step3 --> Commit[📦 /commit<br/>Create commit]
     Commit --> ShipChoice{How to<br/>merge?}
 
-    ShipChoice -->|Simple change| Ship[🚢 /ship<br/>Direct to main<br/><i>Requires: GitHub MCP</i>]
-    ShipChoice -->|Show team| Show[👀 /show<br/>Auto-merge + notify<br/><i>Requires: GitHub MCP</i>]
-    ShipChoice -->|Needs review| Ask[💬 /ask<br/>Create PR<br/><i>Requires: GitHub MCP</i>]
+    ShipChoice -->|Simple change| Ship[🚢 /pr-ship<br/>Direct to main<br/><i>Requires: GitHub MCP</i>]
+    ShipChoice -->|Show team| Show[👀 /pr-show<br/>Auto-merge + notify<br/><i>Requires: GitHub MCP</i>]
+    ShipChoice -->|Needs review| Ask[💬 /pr-ask<br/>Create PR<br/><i>Requires: GitHub MCP</i>]
 
     Ship --> Done([✅ Done])
     Show --> Done
@@ -250,15 +250,14 @@ flowchart TB
 - `/pr` - Creates a pull request using GitHub MCP
 - `/summarize` - Summarize conversation progress and next steps
 - `/gap` - Analyze conversation context for unaddressed items and gaps
-- `/forever` - Run autonomously until stopped or stuck
 - `/code-review` - Code review using dynamic category detection and domain-specific analysis
 - `/polish` - Review and address issues in existing code - fix problems or justify skipping
 
 ### Ship / Show / Ask
 
-- `/ship` - Ship code directly to main - for small, obvious changes that don't need review
-- `/show` - Show code to team with auto-merge - for changes that should be visible but don't need approval
-- `/ask` - Request team review and approval - for complex changes needing discussion
+- `/pr-ship` - Ship code directly to main - for small, obvious changes that don't need review
+- `/pr-show` - Show code to team with auto-merge - for changes that should be visible but don't need approval
+- `/pr-ask` - Request team review and approval - for complex changes needing discussion
 
 ### Worktree Management
 
@@ -346,7 +345,7 @@ Claude executes the complete red-green-refactor cycle: writes a failing test, im
 Claude reviews changes, drafts a commit message following project standards, and creates the commit.
 
 ```
-/ask
+/pr-ask
 ```
 
 Claude analyzes commits, creates a PR with summary and test plan.
