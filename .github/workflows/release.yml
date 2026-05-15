@@ -15,6 +15,9 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    env:
+      # Opt into Node 24 for JS actions ahead of the June 2 2026 forced switch.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,9 +57,11 @@ jobs:
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
+          report_type: test_results
+          files: test-report.junit.xml
 
       - name: Release
         env:

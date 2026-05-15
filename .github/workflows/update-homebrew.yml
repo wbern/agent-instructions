@@ -13,6 +13,8 @@ jobs:
     # On workflow_run, only after success. workflow_dispatch always runs.
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     steps:
       - name: Get latest release
         id: release

@@ -123,6 +123,12 @@ pnpm test           # See what changed
 pnpm vitest run -u  # Accept changes
 ```
 
+### Snapshot Gotchas
+
+- **CI is strict about obsolete snapshots; local is lenient.** Locally `pnpm test` will pass with obsolete entries (renamed/deleted source files leave stale keys in the `.snap` file). CI fails the build. Always run `pnpm vitest run -u` after renaming or deleting a source file in `src/sources/`.
+- **If `pnpm vitest run -u` leaves obsolete entries behind, target the specific test file:** `pnpm vitest run scripts/__tests__/dynamic-generation.test.ts -u`. The repo-wide invocation has occasionally failed to prune obsolete keys in this snapshot file.
+- **Vitest reporter flag replaces, not adds.** `--reporter=junit` alone suppresses stdout output, so CI logs show only "exit 1". The workflow passes both `--reporter=default --reporter=junit` and uploads the JUNIT XML as an artifact (see `.github/workflows/release.yml`). Don't drop the `default` reporter.
+
 ## Repository Standards
 
 ### Commit Messages
