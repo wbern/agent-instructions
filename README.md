@@ -503,27 +503,26 @@ function closestToZero(nums: number[]): number {
 
 ✅ 4/4 tests still pass
 
-## Transparency: @wbern's Usage Stats (Jan 20 - Feb 3, 2025)
+## Transparency: @wbern's Usage Stats (Apr 8 – May 15, 2026)
 
-| Command | Usage |
-|---------|-------|
-| /tdd | 26% |
-| /gap | 15% |
-| /research | 15% |
-| /code-review | 13% |
-| /commit | 8% |
-| /refactor | 5% |
-| /create-issues | 4% |
-| /issue | 2% |
-| /red | 2% |
-| /polish | 2% |
-| /worktree-add | 2% |
-| /pr | 1% |
-| /spike | 1% |
-| /summarize | 1% |
-| /tdd-review | 1% |
-| /create-adr | 1% |
-| Other | 1% |
+Counted across all Claude Code sessions, filtered to commands shipped by this repo. Total: 1,286 invocations over ~5 weeks. Movement shown vs. the Jan 20 – Feb 3, 2026 sample (previously mislabeled as 2025).
+
+| Command | Usage | Movement |
+|---------|-------|----------|
+| /code-review | 27% | ▲ up from 13% |
+| /tdd | 20% | ▼ down from 26% |
+| /research | 18% | ▲ up from 15% |
+| /commit | 15% | ▲ up from 8% |
+| /gap | 12% | ▼ down from 15% |
+| /polish | 4% | ▲ up from 2% |
+| /red | 1% | ▼ down from 2% |
+| /green | 1% | ▲ new (not in prior sample) |
+| /summarize | <1% | ≈ flat (was 1%) |
+| /refactor | <1% | ▼ down from 5% |
+
+Other commands from the prior sample that fell out of regular use this window: `/create-issues` (was 4%), `/issue` (2%), `/worktree-add` (2%), `/pr` (1%), `/spike` (1%), `/tdd-review` (1%), `/create-adr` (1%).
+
+The rest (`/kata`, `/busycommit`, `/beepboop`, `/simplify`, `/pr-show`, `/pr-ship`, `/pr-ask`, `/worktree-cleanup`, `/worktree-setup`, `/gastown-setup`, `/upgrade-deps`, `/commit-hook-checklist`, `/add-command`) didn't see use in this window — kept around because they earn their keep occasionally, even if not weekly.
 
 ## Contributing
 
