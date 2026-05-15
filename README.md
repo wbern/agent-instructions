@@ -39,7 +39,7 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 > "TDD helps you to pay attention to the right issues at the right time so you can make your designs cleaner, you can refine your designs as you learn." — Kent Beck
 
-AI coding agents like [Claude Code](https://docs.anthropic.com/en/docs/claude-code/slash-commands), [OpenCode](https://opencode.ai/docs/commands/), and [Codex](https://github.com/openai/codex) support custom slash commands / skills — type `/foo` and the agent receives the contents of `foo.md` as instructions. This repo provides ready-made commands for Test-Driven Development workflows.
+AI coding agents like [Claude Code](https://docs.anthropic.com/en/docs/claude-code/slash-commands), [OpenCode](https://opencode.ai/docs/commands/), and [Codex](https://developers.openai.com/codex/skills) can be extended with project- or user-level instruction files. Claude Code and OpenCode expose them as **slash commands** (`/foo` → contents of `foo.md`). Codex exposes them as **skills** (`$foo` to mention, or `/skills` to list — Codex does not support user-defined `/foo` slash commands). This repo provides ready-made content for Test-Driven Development workflows that installs into each agent's native mechanism.
 
 Custom commands are just a glorified copy-paste mechanism—but that simplicity is what makes them effective for establishing consistent development practices.
 
@@ -61,16 +61,41 @@ pnpm dlx @wbern/agent-instructions  # pnpm
 **Install globally:**
 
 ```bash
-brew install wbern/tap/agent-instructions    # Homebrew
-npm install -g @wbern/agent-instructions     # npm
+# Homebrew (tap once, then install)
+brew tap wbern/tap
+brew install wbern/tap/agent-instructions
+
+# npm
+npm install -g @wbern/agent-instructions
+```
+
+**Per-agent install examples:**
+
+```bash
+# Claude Code + OpenCode, project-scope slash commands
+agent-instructions --scope=project --agent=both --overwrite
+
+# Codex, user-scope skills
+agent-instructions --scope=user --agent=codex --overwrite
 ```
 
 The interactive installer lets you choose:
 
 - **Feature flags**: Enable optional integrations like [Beads MCP](https://github.com/steveyegge/beads)
 - **Scope**: User-level (global) or project-level installation
+- **Agent**: `claude`, `opencode`, `codex`, or `both` (claude + opencode)
 
 After installation, restart your agent if it's currently running.
+
+### Codex: skills, not slash commands
+
+Codex CLI does not support user-defined `/foo` slash commands. When you install with `--agent=codex`, this package writes [Codex skills](https://developers.openai.com/codex/skills) to `~/.codex/skills/<name>/SKILL.md` (user scope) or `.codex/skills/<name>/SKILL.md` (project scope). Invoke them by:
+
+- Typing `$red`, `$green`, `$tdd`, etc. to mention a skill explicitly
+- Running `/skills` to list installed skills
+- Letting Codex pick implicitly — it can select a skill when your prompt matches its `description`
+
+The `--agent=both` shortcut targets Claude Code + OpenCode only. To install for Codex, pass `--agent=codex` explicitly.
 
 ### Adding to Your Repository
 

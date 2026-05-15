@@ -52,29 +52,29 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.3.10",
+    "@biomejs/biome": "^2.4.15",
     "@semantic-release/git": "^10.0.1",
     "@types/fs-extra": "^11.0.4",
-    "@types/node": "^25.0.3",
-    "@vitest/coverage-v8": "^4.0.16",
-    "diff": "^8.0.2",
+    "@types/node": "^25.8.0",
+    "@vitest/coverage-v8": "^4.1.6",
+    "diff": "^9.0.0",
     "husky": "^9.1.7",
-    "jscpd": "^4.0.5",
-    "knip": "^5.77.0",
-    "lint-staged": "^16.2.7",
-    "markdownlint-cli": "^0.47.0",
+    "jscpd": "^4.2.0",
+    "knip": "^6.13.1",
+    "lint-staged": "^17.0.4",
+    "markdownlint-cli": "^0.48.0",
     "picocolors": "^1.1.1",
-    "semantic-release": "^25.0.2",
+    "semantic-release": "^25.0.3",
     "tsup": "^8.5.1",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.16"
+    "tsx": "^4.22.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
   },
   "dependencies": {
-    "@clack/prompts": "^0.11.0",
-    "fs-extra": "^11.3.3",
+    "@clack/prompts": "^1.4.0",
+    "fs-extra": "^11.3.5",
     "markdownlint": "^0.40.0",
-    "valibot": "^1.2.0"
+    "valibot": "^1.4.0"
   },
   "release": {
     "branches": [
