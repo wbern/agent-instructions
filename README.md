@@ -20,21 +20,6 @@
 [![Supports OpenCode](https://img.shields.io/badge/Supports-OpenCode-FF6B35)](https://opencode.ai/docs/commands/)
 [![Supports Codex](https://img.shields.io/badge/Supports-Codex-10A37F?logo=openai&logoColor=white)](https://github.com/openai/codex)
 
-```
-       _==/          i     i          \==_
-     /XX/            |\___/|            \XX\
-   /XXXX\            |XXXXX|            /XXXX\
-  |XXXXXX\_         _XXXXXXX_         _/XXXXXX|
- XXXXXXXXXXXxxxxxxxXXXXXXXXXXXxxxxxxxXXXXXXXXXXX
-|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
-XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
- XXXXXX/^^^^"\XXXXXXXXXXXXXXXXXXXXX/^^^^^\XXXXXX
-  |XXX|       \XXX/^^\XXXXX/^^\XXX/       |XXX|
-    \XX\       \X/    \XXX/    \X/       /XX/
-       "\       "      \X/      "       /"
-```
-
 **TDD workflow commands for AI coding agents (Claude Code, OpenCode, Codex).**
 
 > "TDD helps you to pay attention to the right issues at the right time so you can make your designs cleaner, you can refine your designs as you learn." — Kent Beck

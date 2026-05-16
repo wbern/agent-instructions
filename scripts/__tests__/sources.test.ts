@@ -116,13 +116,6 @@ describe("argument-hint frontmatter", () => {
 });
 
 describe("README", () => {
-  it("should contain Batman logo ASCII art", () => {
-    const readmePath = path.join(PROJECT_ROOT, "README.md");
-    const content = fs.readFileSync(readmePath, "utf8");
-
-    expect(content).toContain("_==/          i     i          \\==_");
-  });
-
   it("should contain npx usage instructions", () => {
     const readmePath = path.join(PROJECT_ROOT, "README.md");
     const content = fs.readFileSync(readmePath, "utf8");
