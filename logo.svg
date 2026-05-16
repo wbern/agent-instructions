@@ -1,0 +1,19 @@
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="agent-instructions">
+  <path d="M 64 40
+           H 192
+           Q 212 40 212 60
+           V 140
+           Q 212 160 192 160
+           H 100
+           L 56 204
+           L 76 160
+           H 64
+           Q 44 160 44 140
+           V 60
+           Q 44 40 64 40
+           Z"
+        fill="none" stroke="#0f1419" stroke-width="12" stroke-linejoin="round"/>
+  <line x1="68" y1="74"  x2="188" y2="74"  stroke="#f0b429" stroke-width="10" stroke-linecap="round"/>
+  <line x1="68" y1="102" x2="188" y2="102" stroke="#f0b429" stroke-width="10" stroke-linecap="round"/>
+  <line x1="68" y1="130" x2="148" y2="130" stroke="#f0b429" stroke-width="10" stroke-linecap="round"/>
+</svg>
