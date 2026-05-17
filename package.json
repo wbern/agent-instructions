@@ -3,7 +3,8 @@
   "version": "4.0.0",
   "description": "TDD workflow commands for AI coding agents (Claude Code, OpenCode)",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "type": "module",
   "bin": {
@@ -83,7 +84,13 @@
     "plugins": [
       "@semantic-release/commit-analyzer",
       "@semantic-release/release-notes-generator",
-      "@semantic-release/npm",
+      [
+        "@semantic-release/npm",
+        {
+          "npmPublish": true,
+          "provenance": true
+        }
+      ],
       "@semantic-release/github",
       [
         "@semantic-release/git",
