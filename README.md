@@ -25,6 +25,7 @@
   <a href="https://github.com/wbern/agent-instructions/graphs/contributors"><img src="https://img.shields.io/github/contributors/wbern/agent-instructions" alt="Contributors"></a>
   <a href="https://github.com/wbern/agent-instructions/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs Welcome"></a>
 </p>
+
 [![Commands](https://img.shields.io/badge/commands-31-blue)](https://github.com/wbern/agent-instructions#available-commands)
 
 [![Supports Claude Code](https://img.shields.io/badge/Supports-Claude%20Code-D97757?logo=anthropic&logoColor=white)](https://docs.anthropic.com/en/docs/claude-code/slash-commands)
